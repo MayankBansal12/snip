@@ -28,6 +28,8 @@ Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analyt
 - **Annotate:** text, arrows, rectangles, and freehand drawing. Change color and text/stroke size, select and drag to reposition, or delete. Annotations are visible for the entire sequence and are rendered into the export.
 - **Playback:** jump to the start or end, play/pause, seek, adjust speed, and toggle audio beside the preview.
 - **Speed:** 0.25×–4×, with pitch-preserving audio. The playback selector and Speed panel control the same edit; both speed and mute apply to export.
+- **Small screens:** preview and timeline first, collapsible tools, and a preview that stays visible while changing settings. Larger trim handles, native swipe-to-scroll for a zoomed timeline, mobile undo/redo, a side-by-side layout on rotated phones, and a project menu for opening or clearing videos.
+- **Keyboard:** press `?` for the shortcut reference, or use the keyboard button. Typing, native form controls, and modal dialogs retain their own behavior.
 - **Theme:** flat neutral light/dark surfaces with restrained amber accents (`#f0b100`) and locally bundled Inter. The choice initially follows the system preference and persists locally.
 
 The source video and all edit settings are stored in IndexedDB on this browser and origin. Refresh restores the project; saved projects from the original version migrate without re-uploading. “New video” replaces the current project. The trash button clears the saved project. Browser storage clearing, private browsing, or storage eviction can remove saved work.
@@ -40,11 +42,30 @@ Input playback depends on browser codec support. MP4 with H.264 and WebM work in
 
 ## Keyboard
 
-- Space: play/pause. Left/right: step the playhead; Shift steps one second.
-- S: split at the playhead. Delete/Backspace: remove the selected clip or annotation.
-- Ctrl/⌘ Z: undo. Ctrl/⌘ Shift Z: redo.
-- Focus a clip edge and use left/right to trim by 0.1 seconds; Shift trims by one second.
-- Focus the crop and use arrow keys to move it; Shift moves it further.
+Press **?** to open the reference. `Mod` means ⌘ on Mac or Ctrl on Windows/Linux.
+
+| Action | Shortcut |
+| --- | --- |
+| Play / pause | Space or K |
+| Nudge playhead by 1/30 second | ← / → |
+| Move by one second | Shift ← / → |
+| Previous / next cut | ↑ / ↓ |
+| Start / end | Home / End |
+| Split at playhead | S |
+| Trim clip start / end to playhead | I / O |
+| Delete selected clip or annotation | Delete / Backspace |
+| Undo / redo | Mod Z / Mod Shift Z; Ctrl Y also redoes |
+| Mute / unmute | M |
+| Slower / faster | [ / ] |
+| Zoom timeline out / in | − / + |
+| Frame / Crop / Filters / Annotate / Speed | 1 / 2 / 3 / 4 / 5 |
+| Expand preview | F |
+| Open a video / export settings | Mod O / Mod E |
+| Close mobile settings or deselect annotation | Escape |
+
+Text fields and selects keep their native keyboard behavior. Space activates a focused button; K remains available for playback. Editing shortcuts are suspended inside dialogs and during export. Holding a destructive key does not repeatedly modify the project. I/O trimming always preserves at least 0.1 seconds of the clip.
+
+Focus a clip edge and use left/right to trim by 0.1 seconds; Shift trims by one second. Focus the crop and use arrow keys to reposition it. Tab through the editor to reach all controls.
 
 ## Verification
 
@@ -62,4 +83,13 @@ APP_URL=http://127.0.0.1:5186 \
 node scripts/verify.mjs
 ```
 
-The automated suite uses a separate browser context. Native FFmpeg/FFprobe are only test tools for generating input and inspecting downloads; the app itself runs entirely in the browser.
+The keyboard and responsive suite uses real key events and emulated touch input, including native horizontal swipes and clip-edge dragging:
+
+```sh
+VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 node scripts/verify-interactions.mjs
+VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 node scripts/verify-touch-layout.mjs
+```
+
+It checks 320px, 390px, 768px, and 844px layouts, including phone landscape, input/dialog focus protection, mobile project actions, and shortcuts for editing.
+
+The automated suites use separate browser contexts. Native FFmpeg/FFprobe are only test tools for generating input and inspecting downloads; the app itself runs entirely in the browser.
