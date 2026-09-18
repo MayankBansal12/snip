@@ -28,7 +28,7 @@ Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analyt
 - **Annotate:** text, arrows, rectangles, and freehand drawing. Change color and text/stroke size, select and drag to reposition, or delete. Annotations are visible for the entire sequence and are rendered into the export.
 - **Playback:** jump to the start or end, play/pause, seek, adjust speed, and toggle audio beside the preview.
 - **Speed:** 0.25×–4×, with pitch-preserving audio. The playback selector and Speed panel control the same edit; both speed and mute apply to export.
-- **Theme:** flat neutral light/dark surfaces with restrained green accents and locally bundled Inter. The choice initially follows the system preference and persists locally.
+- **Theme:** flat neutral light/dark surfaces with restrained amber accents (`#f0b100`) and locally bundled Inter. The choice initially follows the system preference and persists locally.
 
 The source video and all edit settings are stored in IndexedDB on this browser and origin. Refresh restores the project; saved projects from the original version migrate without re-uploading. “New video” replaces the current project. The trash button clears the saved project. Browser storage clearing, private browsing, or storage eviction can remove saved work.
 

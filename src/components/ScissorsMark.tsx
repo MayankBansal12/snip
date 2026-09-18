@@ -1,11 +1,11 @@
 export default function ScissorsMark({className}:{className?:string}) {
-  return <svg className={className} width="92" height="64" viewBox="0 0 92 64" fill="none" aria-hidden="true">
-    <g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3.5 4">
-      <path d="M28 25c-7 2-15-1-16-7C10 9 18 5 24 9c5 3 7 9 4 16Z"/>
-      <path d="M28 39c-7-2-15 1-16 7-2 9 6 13 12 9 5-3 7-9 4-16Z"/>
-      <path d="m28 25 43 29M28 39 71 10"/>
+  return <svg className={className} width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+    <g stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="15" r="7"/>
+      <circle cx="12" cy="49" r="7"/>
+      <path d="m17.5 19.5 34 28.5M17.5 44.5 51.5 16"/>
+      <path d="M44 32h16" strokeWidth="2" strokeDasharray="2 5"/>
     </g>
-    <circle cx="39" cy="32" r="2" fill="currentColor"/>
-    <path d="M55 32h27" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 5" opacity=".45"/>
+    <circle cx="32.5" cy="32" r="2.3" fill="currentColor"/>
   </svg>;
 }
