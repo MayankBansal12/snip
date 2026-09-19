@@ -1,62 +1,57 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { Merge, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Gauge, ZoomIn, X } from 'lucide-react';
 import { Button } from './ui/button';
-import { Field, FieldLabel, FieldDescription, FieldError } from './ui/field';
+import { Kbd } from './ui/kbd';
 import { Input } from './ui/input';
-import { Slider } from './ui/slider';
-import { Separator } from './ui/separator';
-import { Popover, PopoverClose, PopoverDescription, PopoverPopup, PopoverTitle, PopoverTrigger } from './ui/popover';
-import EditorSelect from './EditorSelect';
-import IconButton from './IconButton';
+import { Popover, PopoverClose, PopoverPopup, PopoverTitle, PopoverTrigger } from './ui/popover';
 import ZoomArea from './ZoomArea';
-import { canMergeClips, clipSpeed, defaultZoom, speedPresets, MIN_SPEED, MAX_SPEED } from '../types';
+import { clipSpeed, defaultZoom, speedPresets, zoomPresets, MIN_SPEED, MAX_SPEED } from '../types';
 import type { Clip, Edits, Source } from '../types';
 
 type Props = {
   source: Source; videoRef: RefObject<HTMLVideoElement | null>; edits: Edits; selected: string; open: boolean; onOpenChange: (open: boolean) => void;
   onChange: (patch: Partial<Clip>, record?: boolean) => void; onCheckpoint: () => void;
-  onMerge: (index: number) => void; onDelete: () => void;
 };
 export default function ClipActions(p: Props) {
   const index = p.edits.clips.findIndex(c => c.id === p.selected), clip = p.edits.clips[index];
-  const speed = clip ? clipSpeed(clip, p.edits) : 1;
-  const [custom, setCustom] = useState(!speedPresets.includes(speed));
-  const [draft, setDraft] = useState(String(speed)), [speedError, setSpeedError] = useState('');
-  useEffect(() => { setCustom(!speedPresets.includes(speed)); setDraft(String(speed)); setSpeedError(''); }, [p.selected, p.open]);
+  const [kind, setKind] = useState<'speed' | 'zoom'>('speed');
+  const [custom, setCustom] = useState(false), [draft, setDraft] = useState(''), [error, setError] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  const speed = clip ? clipSpeed(clip, p.edits) : 1, zoom = clip?.zoom ?? defaultZoom;
+  const value = kind === 'speed' ? speed : zoom.scale, min = kind === 'speed' ? MIN_SPEED : 1, max = MAX_SPEED;
+  useEffect(() => { setCustom(false); setError(''); }, [p.selected, p.open, kind]);
+  useEffect(() => { if (custom) { input.current?.focus(); input.current?.select(); } }, [custom]);
   if (!clip) return null;
-  const zoom = clip.zoom ?? defaultZoom;
-  const adjusted = speed !== 1 || zoom.scale !== 1;
-  const mergeIndex = canMergeClips(clip, p.edits.clips[index + 1], p.edits) ? index
-    : canMergeClips(p.edits.clips[index - 1], clip, p.edits) ? index - 1 : -1;
-  const applyCustom = () => {
-    const value = Number(draft);
-    if (!draft.trim() || !Number.isFinite(value) || value < MIN_SPEED || value > MAX_SPEED) {
-      setSpeedError(`Enter a speed from ${MIN_SPEED}× to ${MAX_SPEED}×.`); return;
-    }
-    setSpeedError('');
-    if (value !== speed) p.onChange({ speed: value });
+  const change = (next: number) => p.onChange(kind === 'speed' ? { speed: next } : { zoom: { ...zoom, scale: next } });
+  const apply = () => {
+    const next = Number(draft);
+    if (!draft.trim() || !Number.isFinite(next) || next < min || next > max) { setError(`enter a value from ${min}× to ${max}×`); input.current?.focus(); return; }
+    if (next !== value) change(next);
+    setCustom(false); setError('');
   };
-  const reset = () => { setCustom(false); setDraft('1'); setSpeedError(''); p.onChange({ speed: 1, zoom: { ...defaultZoom } }); };
-  return <Popover triggerId="clip-actions-trigger" open={p.open} onOpenChange={p.onOpenChange}>
-    <PopoverTrigger id="clip-actions-trigger" render={<Button size="sm" variant="ghost" />} aria-label="Clip actions"><SlidersHorizontal /><span className="hidden sm:inline">Clip actions</span></PopoverTrigger>
-    <PopoverPopup side="top" align="start" sideOffset={12} className="w-72 max-w-[calc(100vw-2rem)] max-h-(--available-height) [&_[data-slot=popover-viewport]]:max-h-[calc(var(--available-height)-2px)]">
-      <div className="mb-4 flex items-center justify-between gap-3"><PopoverTitle className="text-sm">Clip {index + 1}</PopoverTitle><div className="flex items-center gap-1">{adjusted && <IconButton label="Reset clip adjustments" size="icon-sm" onClick={reset}><RotateCcw /></IconButton>}<PopoverClose render={<Button variant="ghost" size="icon-sm" />} aria-label="Close clip actions"><X /></PopoverClose></div></div>
-      <PopoverDescription className="sr-only">Adjust this clip’s speed and zoom, or delete it.</PopoverDescription>
-      <div className="space-y-5">
-        <Field><FieldLabel>Speed</FieldLabel><EditorSelect label="Clip speed" value={custom ? 'custom' : String(speed)} options={[...speedPresets.map(value => ({ value: String(value), label: `${value}×` })), { value: 'custom', label: 'Custom…' }]} onChange={value => {
-          setSpeedError(''); setCustom(value === 'custom');
-          if (value === 'custom') setDraft(String(speed)); else p.onChange({ speed: Number(value) });
-        }} /></Field>
-        {custom && <Field invalid={!!speedError}><FieldLabel>Custom speed</FieldLabel><Input type="number" inputMode="decimal" min={MIN_SPEED} max={MAX_SPEED} step="any" aria-label="Custom speed" aria-labelledby="" value={draft} onChange={event => { setDraft(event.target.value); setSpeedError(''); }} onBlur={applyCustom} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); applyCustom(); } }} /><FieldDescription>{MIN_SPEED}×–{MAX_SPEED}× · Enter to apply</FieldDescription>{speedError && <FieldError match role="alert">{speedError}</FieldError>}</Field>}
-        <Field><div className="flex w-full items-center justify-between"><FieldLabel>Zoom</FieldLabel><span className="text-xs tabular-nums text-muted-foreground">{Number(zoom.scale.toFixed(2))}×</span></div><Slider min={1} max={4} step={.05} value={zoom.scale} onPointerDown={p.onCheckpoint} onKeyDown={event => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key)) p.onCheckpoint(); }} onValueChange={value => p.onChange({ zoom: { ...zoom, scale: Array.isArray(value) ? value[0] : value } }, false)} /></Field>
-        {zoom.scale > 1 && <ZoomArea source={p.source} edits={p.edits} clip={clip} videoRef={p.videoRef} onCheckpoint={p.onCheckpoint} onChange={(zoom, record = true) => p.onChange({ zoom }, record)} />}
-      </div>
-      <Separator className="my-4" />
-      <div className="flex flex-col gap-1">
-        {mergeIndex >= 0 && <Button variant="ghost" size="sm" className="justify-start" onClick={() => p.onMerge(mergeIndex)}><Merge />Merge with {mergeIndex === index - 1 ? 'previous' : 'next'} clip</Button>}
-        <Button variant="ghost" size="sm" className="justify-start text-destructive-foreground" onClick={p.onDelete}><Trash2 />Delete clip</Button>
-      </div>
-    </PopoverPopup>
-  </Popover>;
+  return <>
+    {(['speed', 'zoom'] as const).map(mode => <Popover key={mode} open={p.open && kind === mode} onOpenChange={open => { setKind(mode); p.onOpenChange(open); }}>
+      <PopoverTrigger render={<Button size="xs" variant="ghost" />} aria-label={`${mode} ${mode === 'speed' ? speed : zoom.scale}×`}>
+        {mode === 'speed' ? <Gauge /> : <ZoomIn />}<span>{mode} <span className="tabular-nums">{mode === 'speed' ? speed : zoom.scale}×</span></span><Kbd aria-hidden="true" className="hidden sm:inline-flex">{mode === 'speed' ? 'x' : 'z'}</Kbd>
+      </PopoverTrigger>
+      <PopoverPopup onKeyDown={event => {
+        if (event.target instanceof Element && event.target.closest('input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.key.toLowerCase() !== (mode === 'speed' ? 'x' : 'z')) return;
+        event.preventDefault(); event.stopPropagation();
+        const presets = mode === 'speed' ? speedPresets : zoomPresets;
+        change((event.shiftKey ? [...presets].reverse().find(p => p < value) : presets.find(p => p > value)) ?? (event.shiftKey ? presets[presets.length - 1] : presets[0]));
+      }} side="top" align="start" sideOffset={12} className="w-80 max-w-[calc(100vw-2rem)]">
+        <div className="mb-4 flex items-center justify-between"><PopoverTitle className="text-sm">{mode} · clip {index + 1}</PopoverTitle><PopoverClose render={<Button variant="ghost" size="icon-sm" />} aria-label={`close ${mode}`}><X /></PopoverClose></div>
+        <div className="grid grid-cols-5 gap-1">{(mode === 'speed' ? speedPresets : zoomPresets).map(preset => <Button key={preset} size="sm" variant={value === preset ? 'secondary' : 'ghost'} aria-pressed={value === preset} onClick={() => { change(preset); setCustom(false); }}>{preset}×</Button>)}</div>
+        {!custom ? <Button className="mt-3 w-full" size="sm" variant="outline" onClick={() => { setDraft(String(value)); setCustom(true); }}>custom {mode}…</Button> : <form noValidate className="mt-3 space-y-2" onSubmit={event => { event.preventDefault(); apply(); }}>
+          <label htmlFor={`custom-${mode}`} className="text-xs">custom {mode} ({min}×–{max}×)</label>
+          <div className="flex gap-2"><Input ref={input} id={`custom-${mode}`} type="number" inputMode="decimal" min={min} max={max} step="any" value={draft} aria-invalid={!!error} aria-describedby={error ? `error-${mode}` : undefined} onChange={event => { setDraft(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setCustom(false); } }} /><Button type="submit" size="sm">apply</Button><Button type="button" size="sm" variant="ghost" onClick={() => setCustom(false)}>cancel</Button></div>
+          {error && <p id={`error-${mode}`} role="alert" className="text-xs text-destructive-foreground">{error}</p>}
+        </form>}
+        {mode === 'zoom' && <div className="mt-4"><ZoomArea source={p.source} edits={p.edits} clip={clip} videoRef={p.videoRef} onCheckpoint={p.onCheckpoint} onChange={(zoom, record = true) => p.onChange({ zoom }, record)} /></div>}
+        <p className="mt-3 text-xs text-muted-foreground"><Kbd>{mode === 'speed' ? 'x' : 'z'}</Kbd> cycles presets · <Kbd>shift</Kbd> reverses</p>
+      </PopoverPopup>
+    </Popover>)}
+  </>;
 }

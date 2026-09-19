@@ -45,13 +45,13 @@ export function createPlayback(video: HTMLVideoElement, options: Options) {
       if (!contiguous || video.ended || video.currentTime < next.start || video.currentTime >= next.end) {
         recoveringEnd = video.paused;
         video.currentTime = next.start;
-        options.onTime(toSequenceTime(next.start, edits));
+        options.onTime(toSequenceTime(next.start, edits, index + 1));
         return;
       }
     }
     const current = edits.clips[options.activeClip.current];
     if (video.currentTime < current.start - .001) { video.currentTime = current.start; return; }
-    options.onTime(toSequenceTime(video.currentTime, edits));
+    options.onTime(toSequenceTime(video.currentTime, edits, options.activeClip.current));
     requestPlay();
   };
   const schedule = () => {

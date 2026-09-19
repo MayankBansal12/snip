@@ -2,6 +2,7 @@ export type Crop = { x: number; y: number; width: number; height: number };
 export type ClipZoom = { scale: number; x: number; y: number };
 export type Clip = { id: string; start: number; end: number; speed?: number; zoom?: ClipZoom };
 export const speedPresets: readonly number[] = [.25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
+export const zoomPresets: readonly number[] = [1, 1.25, 1.5, 2, 3, 4];
 export const MIN_SPEED = .25, MAX_SPEED = 4;
 export const defaultZoom: ClipZoom = { scale: 1, x: .5, y: .5 };
 export type Annotation = {
@@ -51,13 +52,16 @@ export function toSourceTime(time: number, edits: Edits): { time: number; index:
   }
   return { time: 0, index: 0 };
 }
-export function toSequenceTime(time: number, edits: Edits) {
-  let elapsed = 0;
-  for (const clip of edits.clips) {
-    if (time < clip.end) return elapsed + clamp(time - clip.start, 0, clip.end - clip.start) / clipSpeed(clip, edits);
-    elapsed += clipDuration(clip, edits);
-  }
-  return elapsed;
+export function toSequenceTime(time: number, edits: Edits, index = edits.clips.findIndex(c => time >= c.start && time < c.end)) {
+  if (index < 0) index = edits.clips.length - 1;
+  return edits.clips.slice(0, index).reduce((sum, c) => sum + clipDuration(c, edits), 0)
+    + clamp(time - edits.clips[index].start, 0, edits.clips[index].end - edits.clips[index].start) / clipSpeed(edits.clips[index], edits);
+}
+// Source neighbors constrain trims even when the sequence is reordered.
+export function trimBounds(clips: Clip[], clip: Clip, duration: number) {
+  const others = clips.filter(c => c.id !== clip.id);
+  return { start: Math.max(0, ...others.filter(c => c.end <= clip.start + 1e-7).map(c => c.end)),
+    end: Math.min(duration, ...others.filter(c => c.start >= clip.end - 1e-7).map(c => c.start)) };
 }
 // Zoom within the existing crop, keeping the output frame and legacy framing intact.
 export function clipCrop(edits: Edits, clip?: Clip): Crop {
@@ -65,10 +69,18 @@ export function clipCrop(edits: Edits, clip?: Clip): Crop {
   const width = base.width / scale, height = base.height / scale;
   return { width, height, x: base.x + (base.width - width) * x, y: base.y + (base.height - height) * y };
 }
-export function canMergeClips(left: Clip | undefined, right: Clip | undefined, edits: Edits) {
-  if (!left || !right || Math.abs(left.end - right.start) > 1e-7 || clipSpeed(left, edits) !== clipSpeed(right, edits)) return false;
+export function mergeBlockReason(left: Clip | undefined, right: Clip | undefined, edits: Edits): string | null {
+  if (!left || !right) return 'no neighboring clip';
+  if (Math.abs(left.end - right.start) > 1e-7) return 'clips must touch in the original video; restore the gap or source order';
+  const differences: string[] = [];
+  if (clipSpeed(left, edits) !== clipSpeed(right, edits)) differences.push('speed');
   const a = left.zoom ?? defaultZoom, b = right.zoom ?? defaultZoom;
-  return a.scale === b.scale && (a.scale === 1 || (a.x === b.x && a.y === b.y));
+  if (a.scale !== b.scale) differences.push('zoom');
+  else if (a.scale > 1 && (a.x !== b.x || a.y !== b.y)) differences.push('zoom position');
+  return differences.length ? `match ${differences.join(' and ')} before merging` : null;
+}
+export function canMergeClips(left: Clip | undefined, right: Clip | undefined, edits: Edits) {
+  return mergeBlockReason(left, right, edits) === null;
 }
 export function cropPixels(source: Source, crop: Crop) {
   const width = even(source.width * crop.width), height = even(source.height * crop.height);
