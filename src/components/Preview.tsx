@@ -51,7 +51,7 @@ export default function Preview({ source, edits, clip, time, editing, playing, u
     edits.annotations.forEach(a => drawAnnotation(ctx, a, size.width, size.height));
   }, [edits.annotations, size]);
   const sourceStyle: CSSProperties = { width: `${pos.width / output.width * 100}%`, height: `${pos.height / output.height * 100}%`, left: `${pos.x / output.width * 100}%`, top: `${pos.y / output.height * 100}%` };
-  const videoStyle: CSSProperties = { width: `${source.width / base.width * 100}%`, height: `${source.height / base.height * 100}%`, transformOrigin: '0 0', transform: `scale(${base.width / crop.width}, ${base.height / crop.height}) translate(${-crop.x / source.width * 100}%, ${-crop.y / source.height * 100}%)`, filter: 'url(#video-treatment)' };
+  const videoStyle: CSSProperties = { width: `${source.width / base.width * 100}%`, height: `${source.height / base.height * 100}%`, transformOrigin: '0 0', willChange: playing ? 'transform' : undefined, transform: `scale(${base.width / crop.width}, ${base.height / crop.height}) translate(${-crop.x / source.width * 100}%, ${-crop.y / source.height * 100}%)`, filter: 'url(#video-treatment)' };
   return <div className="preview-stage">
     <svg width="0" height="0" className="filter-definitions" aria-hidden="true"><defs><filter id="video-treatment" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values={svgMatrix(edits)} /></filter></defs></svg>
     <div className="preview-boundary"><div ref={frame} className="composition rounded-lg" style={{ aspectRatio: ratio, '--ratio': ratio, background: edits.canvas.background } as CSSProperties}>

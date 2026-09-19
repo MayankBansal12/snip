@@ -16,8 +16,8 @@ type Props = { open: boolean; source: Source | null; edits: Edits; busy: boolean
 export default function ExportDialog(p: Props) {
   const output = p.source ? outputSize(p.source,p.edits) : { width: 0, height: 0 }, canvas = p.source ? canvasSize(p.source,p.edits) : output;
   const estimate = p.source ? estimateExportSize(p.source, p.edits) : null;
-  const sizeHint = estimate && <p role="status" aria-live="polite" className="whitespace-nowrap text-[10px] text-muted-foreground sm:text-xs">estimated size: <span className="font-medium tabular-nums text-foreground">{formatSizeEstimate(estimate)}</span> (actual size may vary.)</p>;
-  const resolutionOptions = [{ value: 'original', label: `Original · ${canvas.width} × ${canvas.height}` }, ...[2160,1440,1080,720,480,360].filter(n => n < Math.min(canvas.width,canvas.height)).map(n => { const size = p.source ? outputSize(p.source,{ ...p.edits, resolution: String(n) }) : output; return { value: String(n), label: `${n}p · ${size.width} × ${size.height}` }; })];
+  const sizeHint = estimate && <p role="status" aria-live="polite" className="whitespace-nowrap text-[10px] text-muted-foreground sm:text-xs">estimated size: <span className="font-medium tabular-nums text-foreground">{formatSizeEstimate(estimate)}</span> (actual size may vary)</p>;
+  const resolutionOptions = [{ value: 'original', label: `original · ${canvas.width} × ${canvas.height}` }, ...[2160,1440,1080,720,480,360].filter(n => n < Math.min(canvas.width,canvas.height)).map(n => { const size = p.source ? outputSize(p.source,{ ...p.edits, resolution: String(n) }) : output; return { value: String(n), label: `${n}p · ${size.width} × ${size.height}` }; })];
   return <Dialog open={p.open} onOpenChange={open => { if (!open && !p.busy) p.onClose(); }}>
     <DialogPopup className="export-dialog" showCloseButton={!p.busy} closeProps={{ 'aria-label': 'close export' }}>
       <DialogHeader><DialogTitle>{p.download ? 'your video is ready' : p.busy ? 'creating your video' : 'export video'}</DialogTitle><DialogDescription>{p.download ? 'all yours. ready to share.' : p.busy ? 'keep this tab open. processing stays on this device.' : 'choose the finishing touches for your download.'}</DialogDescription></DialogHeader>
@@ -29,7 +29,7 @@ export default function ExportDialog(p: Props) {
           <div className="flex flex-wrap items-center gap-2"><Badge variant="outline"><Film />{formatTime(sequenceDuration(p.edits))}</Badge><Badge variant="outline">{output.width} × {output.height}</Badge><Badge variant="outline">{p.edits.clips.length} {p.edits.clips.length === 1 ? 'clip' : 'clips'}</Badge></div>
           {sizeHint}
           {p.error && <Alert variant="error"><AlertDescription>{p.error}</AlertDescription></Alert>}
-          <p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-3.5" />no watermark. no upload. just your video in your device.</p>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-3.5" />no watermark</p>
         </div>}
       </DialogPanel>
       <DialogFooter>

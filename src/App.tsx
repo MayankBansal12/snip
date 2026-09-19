@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
 import { createPlayback } from './playback';
-import { clearProject, restoreProject, saveEdits, saveProject } from './storage';
+import { clearProject, restoreProject, saveEdits, saveProject, saveSource } from './storage';
 import { defaultZoom, zoomPresets, trimBounds, clamp, speedPresets, canMergeClips, clipDuration, clipSpeed, defaults, formatTime, migrateEdits, sequenceDuration, toSequenceTime, toSourceTime, uid } from './types';
 import type { Clip, Edits, Source } from './types';
 import { readMetadata, thumbnails } from './media';
@@ -43,8 +43,8 @@ export default function App(){
   const duration=sequenceDuration(edits);
 
   useEffect(()=>{let active=true;restoreProject().then(project=>{if(active&&project){const next=migrateEdits(project.edits,project.source.duration);setSource(project.source);setEdits(next);editsRef.current=next;setSelectedClip(next.clips[0].id);}}).catch(()=>{if(active)setSaved('local saving is unavailable');}).finally(()=>{if(active)setReady(true);});return()=>{active=false;};},[]);
-  useEffect(()=>{if(!source){setUrl('');return;}const next=URL.createObjectURL(source.file);setUrl(next);return()=>URL.revokeObjectURL(next);},[source]);
-  useEffect(()=>{setFrames([]);if(!url||!source)return;const controller=new AbortController();void thumbnails(url,source.duration,(image,time)=>setFrames(old=>[...old,{url:image,time}]),controller.signal);return()=>controller.abort();},[url,source]);
+  useEffect(()=>{if(!source){setUrl('');return;}const next=URL.createObjectURL(source.file);setUrl(next);return()=>URL.revokeObjectURL(next);},[source?.file]);
+  useEffect(()=>{setFrames([]);if(!url||!source)return;const controller=new AbortController();void thumbnails(url,source.duration,(image,time)=>setFrames(old=>[...old,{url:image,time}]),controller.signal);return()=>controller.abort();},[url,source?.duration]);
   useEffect(()=>{if(!source||!ready)return;let active=true;setSaved('saving…');saveEdits(edits).then(()=>{if(active)setSaved('saved on this device');}).catch(()=>{if(active)setSaved('couldn’t save — storage is full');});return()=>{active=false;};},[edits,source,ready]);
   useEffect(()=>{
     const video=videoRef.current;if(!video||!url)return;
@@ -145,6 +145,13 @@ export default function App(){
     enabled: !source && ready && !loading && !busy && !showShortcuts && !showExport && !confirmClear,
     onFile: file => { void openFile(file); },
   });
+  function renameProject(value:string){
+    if(!source||busy||loading)return;
+    const name=value.replace(/[\\/\u0000-\u001f]/g,'_').trim();
+    if(!name||name===source.name)return;
+    const next={...source,name};setSource(next);setDownload(null);setProjectDownload(null);
+    void saveSource(next).catch(()=>setError('couldn’t save the new name on this device.'));
+  }
   function downloadProject(){
     if(!source||busy||loading)return;
     try{
@@ -189,7 +196,7 @@ export default function App(){
       <div className="header-actions flex items-center gap-1 sm:gap-2">
         <span className="sr-only" role="status">{loading ? 'opening…' : saved}</span>
         <span className="hidden sm:contents">{themeButton}</span>
-        <ProjectMenu filename={source.name} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
+        <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
         <Button aria-label="export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine className="hidden sm:block" />export</Button>
       </div>
     </header>}
