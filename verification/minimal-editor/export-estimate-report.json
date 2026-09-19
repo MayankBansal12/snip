@@ -1,0 +1,41 @@
+[
+  {
+    "check": "Exact home-page copy and live quality/resolution estimates fit desktop and 320px layouts",
+    "original": {
+      "text": "Estimated size: 1.9–14 MB\nActual size may vary.",
+      "min": 1992294.4,
+      "max": 14680064
+    },
+    "compact": {
+      "text": "Estimated size: 0.92–6.6 MB\nActual size may vary.",
+      "min": 964689.92,
+      "max": 6920601.6
+    },
+    "small": {
+      "text": "Estimated size: 0.31–2.4 MB\nActual size may vary.",
+      "min": 325058.56,
+      "max": 2516582.4
+    }
+  },
+  {
+    "check": "MP4 estimate stays visible offline during export and is replaced with actual size on completion",
+    "estimate": {
+      "text": "Estimated size: 0.31–2.4 MB\nActual size may vary.",
+      "min": 325058.56,
+      "max": 2516582.4
+    },
+    "actualBytes": 560458
+  },
+  {
+    "check": "WEBM estimate stays visible offline during export and is replaced with actual size on completion",
+    "estimate": {
+      "text": "Estimated size: 0.2–1.6 MB\nActual size may vary.",
+      "min": 209715.2,
+      "max": 1677721.6
+    },
+    "actualBytes": 860642
+  },
+  {
+    "check": "No browser errors"
+  }
+]
