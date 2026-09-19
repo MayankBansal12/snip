@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, Check, ChevronRight, Crop as CropIcon, Film, FolderOpen, Frame, Gauge, Keyboard, Maximize2, Moon, Palette, Pause, PenLine, Play, Plus, Redo2, ShieldCheck, SkipBack, SkipForward, Sun, Undo2, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, Check, ChevronRight, Crop as CropIcon, Film, FolderOpen, Frame, Gauge, Keyboard, Maximize2, Moon, Palette, Pause, PenLine, Play, Plus, Redo2, ShieldCheck, SkipBack, SkipForward, Sun, Undo2, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
 import { clearProject, restoreProject, saveEdits, saveProject } from './storage';
 import { defaults, formatTime, migrateEdits, outputSize, sequenceDuration, toSequenceTime, toSourceTime, uid } from './types';
@@ -16,11 +16,13 @@ import ShortcutsDialog from './components/ShortcutsDialog';
 import ProjectMenu from './components/ProjectMenu';
 import { useEditorShortcuts } from './hooks/useEditorShortcuts';
 import { useCompactLayout } from './hooks/useCompactLayout';
+import { useFilePaste } from './hooks/useFilePaste';
 import type { Download } from './components/ExportDialog';
 import { Button } from './components/ui/button';
+import { Spinner } from './components/ui/spinner';
 import { Badge } from './components/ui/badge';
-import { Card, CardPanel } from './components/ui/card';
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty';
+import { Card } from './components/ui/card';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty';
 import { Tabs, TabsList, TabsTab, TabsPanel } from './components/ui/tabs';
 import { Slider } from './components/ui/slider';
 import { Field, FieldLabel } from './components/ui/field';
@@ -112,6 +114,10 @@ export default function App(){
     open:()=>inputRef.current?.click(),openProject:()=>projectInputRef.current?.click(),saveProject:downloadProject,export:openExport,help:()=>{videoRef.current?.pause();setShowShortcuts(true);},
     escape:()=>{setSelectedAnnotation(null);setDrawMode('select');if(compact)closeSettings();},
   });
+  useFilePaste({
+    enabled: !source && ready && !loading && !busy && !showShortcuts && !showExport && !confirmClear,
+    onFile: file => { void openFile(file); },
+  });
   function downloadProject(){
     if(!source||busy||loading)return;
     try{
@@ -149,20 +155,31 @@ export default function App(){
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
     <input ref={projectInputRef} type="file" id="project-file" accept=".snip" hidden onChange={e => void openFile(e.target.files?.[0],true)} />
     {draggingFile && !busy && <div className="pointer-events-none fixed inset-4 z-50 flex items-center justify-center bg-background/95"><Empty><EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>Drop your video or project</EmptyTitle><EmptyDescription>Everything stays on this device.</EmptyDescription></EmptyHeader></Empty></div>}
-    <header className="editor-header flex min-h-18 items-center gap-4 border-b bg-card px-4 py-4 sm:px-6">
+    {source && <header className="editor-header flex min-h-18 items-center gap-4 border-b bg-card px-4 py-4 sm:px-6">
       {brand}
       <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
       {source ? <div className="file-info hidden min-w-0 flex-1 items-center gap-3 sm:flex"><span className="hidden text-sm text-muted-foreground lg:inline">Workspace</span><ChevronRight className="hidden size-3.5 text-muted-foreground lg:block" /><span className="truncate text-sm font-medium" title={source.name}>{source.name}</span></div> : <span className="hidden text-sm text-muted-foreground sm:inline">A little video editor for web</span>}
       <div className="header-actions ml-auto flex shrink-0 items-center gap-2">
         {source && <><span className="hidden items-center gap-1.5 text-xs text-muted-foreground xl:flex" role="status" title={offline ? 'Your video and edits are saved here. Available offline.' : 'Your video and edits stay in this browser.'}><Check className="size-3.5" />{loading ? 'Opening…' : saved}</span><div className="history-actions hidden items-center min-[901px]:flex"><IconButton label="Undo" aria-keyshortcuts="Control+Z Meta+Z" disabled={!history.current.past.length || busy || loading} onClick={undo}><Undo2 /></IconButton><IconButton label="Redo" disabled={!history.current.future.length || busy || loading} onClick={redo}><Redo2 /></IconButton></div><span className="hidden min-[901px]:contents">{themeButton}</span><ProjectMenu disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) videoRef.current?.pause(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} /><Button aria-label="Export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine /><span className="sm:hidden">Export</span><span className="hidden sm:inline">Export video</span></Button></>}
-        {!source && <><IconButton label="Keyboard shortcuts" onClick={() => setShowShortcuts(true)}><Keyboard /></IconButton>{themeButton}</>}
       </div>
-    </header>
-    {!source ? <main className="mx-auto flex min-h-[calc(100svh-73px)] max-w-4xl flex-col justify-center gap-8 px-4 py-12 sm:px-8">
-      <div className="text-center"><Badge variant="outline"><ShieldCheck />Private by default</Badge><h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">A small edit.<br /><span className="text-muted-foreground">A better video.</span></h1><p className="mt-4 text-sm leading-relaxed text-muted-foreground">Trim the extra. Set the frame. Make it yours.</p></div>
-      <Card><CardPanel><Empty className="py-10 md:py-12"><EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>Your next edit starts here</EmptyTitle><EmptyDescription>Drop a video or a .snip project here.<br />MP4, WebM, MOV and more · up to 500 MB</EmptyDescription></EmptyHeader><EmptyContent><div className="flex flex-wrap justify-center gap-2"><Button size="lg" disabled={!ready || loading} loading={loading || !ready} onClick={() => inputRef.current?.click()}><Plus />{loading ? 'Opening your file…' : !ready ? 'Getting ready…' : 'Open a video'}</Button><Button size="lg" variant="outline" disabled={!ready || loading} onClick={() => projectInputRef.current?.click()}><FolderOpen />Open project</Button></div><span className="text-xs text-muted-foreground">No account. No uploads. No watermark.</span></EmptyContent></Empty></CardPanel></Card>
-      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><ShieldCheck className="size-3.5" />Local in your browser</span><span>Original files stay untouched</span><span>{offline ? 'Ready to work offline' : 'Small edits. All yours.'}</span></div>
-      {errorAlert}
+    </header>}
+    {!source ? <main className="start-screen flex min-h-svh flex-col">
+      <div className="absolute right-5 top-5 sm:right-8 sm:top-7">{themeButton}</div>
+      <div className="flex flex-1 items-center justify-center px-6 pb-16 pt-24 sm:pb-36">
+        <div className="w-full max-w-[34.25rem] text-center">
+          <div className="flex items-center justify-center gap-4 sm:gap-5"><ScissorsMark className="size-14 shrink-0 text-primary sm:size-16" /><h1 className="text-7xl font-[750] leading-none tracking-[-0.075em] sm:text-[88px]">snip<span className="text-primary">.</span></h1></div>
+          <p className="mt-6 text-sm text-muted-foreground sm:text-base">a little video editor for web</p>
+          <Button variant="outline" aria-label="Open a video" aria-describedby="upload-hint" aria-busy={loading || !ready} disabled={!ready || loading} onClick={() => inputRef.current?.click()} className="mt-10 h-44 w-full flex-col gap-3 rounded-2xl border-dashed border-primary/45 bg-card font-normal shadow-none sm:h-52">
+            {loading || !ready ? <Spinner className="mb-1 size-6" /> : <Plus className="mb-1 size-6 text-warning-foreground dark:text-primary" strokeWidth={1.5} />}
+            <span className="flex items-center gap-2 text-base text-warning-foreground sm:text-lg dark:text-primary">{loading ? 'Opening your file…' : !ready ? 'Getting things ready…' : 'Open a video'}{ready && !loading && <ArrowUpRight className="size-4" />}</span>
+            <span id="upload-hint" className="text-sm text-muted-foreground">or drop or paste one here</span>
+          </Button>
+          <Button variant="ghost" className="mt-4 text-muted-foreground" disabled={!ready || loading} onClick={() => projectInputRef.current?.click()}><FolderOpen />Open project</Button>
+          <p className="mt-6 flex items-center justify-center gap-4 text-xs text-muted-foreground"><span>no watermarks</span><Separator orientation="vertical" className="h-3.5" /><span>local in browser</span></p>
+          {errorAlert}
+        </div>
+      </div>
+      <footer className="flex items-center justify-center gap-2 px-6 pb-5 text-xs text-muted-foreground"><span className="size-1 rounded-full bg-primary" />{offline ? 'ready when you’re offline, too.' : 'small edits. all yours.'}</footer>
     </main> : <main className="editor mx-auto max-w-[1920px] p-3 sm:p-5">
       <div className="mb-4 flex min-w-0 items-center justify-between gap-3 sm:hidden"><span className="truncate text-xs font-medium">{source.name}</span><span className="shrink-0 text-[10px] text-muted-foreground" role="status">{loading ? 'Opening…' : saved}</span></div>
       <div className="workspace" data-panel-open={panelOpen} inert={loading || busy}>

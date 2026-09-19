@@ -20,6 +20,8 @@ Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analyt
 
 ## Editing
 
+Start by choosing **Open a video**, dropping a video onto the page, or pasting a copied video file with **Mod V** when the browser provides it as a clipboard file. Pasting text leaves the page unchanged, and pasting files during editing does not replace the active project. The start screen keeps only the theme toggle in the corner.
+
 - **Timeline:** actual video thumbnails, a scrubbable playhead, time ruler, and zoom. Split at the playhead, delete middle sections, and drag either edge of each clip. Remaining clips close together automatically. Preview and export both skip removed footage.
 - **Undo/redo:** splits, trims, filters, canvas changes, and annotations. Each pointer drag is one undo step. Undo history lasts for the current session.
 - **Frame:** original, landscape, portrait, square, social, classic, wide, or a custom aspect ratio. Fit the entire video with a background color and an optional inset, or fill the frame. The inset reveals a border even when the video matches the frame ratio. Choose the edit/export resolution.
@@ -125,3 +127,5 @@ Application controls use the official [coss registry](https://coss.com/ui/docs/g
 `src/style.css` defines the existing light/dark palette as coss theme tokens and arranges the workspace. `src/media-canvas.css` contains only the video composition, crop geometry, and clip-track rendering; these are editor-specific interactions rather than replacements for UI controls. Standard component styling stays in coss.
 
 The browser suites use `scripts/ui.mjs` to interact with coss tabs, selects, and menus by their accessible roles. All suites accept `APP_URL`, `CDP_URL`, and `VERIFY_OUTPUT`. Run them against a production preview for offline tests.
+
+Start-screen layout and file-picker, drop, and clipboard imports can be checked with `VIDEO_SAMPLE=/path/to/8-second-video.mp4 node scripts/verify-start-screen.mjs`.
