@@ -1,9 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath, URL } from 'node:url';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 export default defineConfig({
-  plugins: [react(), {
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  plugins: [react(), tailwindcss(), {
     name: 'offline-editor',
     closeBundle() {
       const files = readdirSync('dist', { recursive: true }).filter((p) => /\.(js|css|html|svg|wasm|woff2|txt)$/.test(String(p)) && p !== 'sw.js').map(String);

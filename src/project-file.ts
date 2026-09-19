@@ -5,7 +5,7 @@ import { readMetadata } from './media';
 // JSON length, UTF-8 manifest, then the original video bytes. Blob slices keep
 // the video out of JS memory; no base64, recompression, or external dependencies.
 const MAGIC = 'SNIPFILE';
-const VERSION = 1;
+const VERSION = 2;
 const HEADER_SIZE = 16;
 const MAX_MANIFEST = 8 * 1024 * 1024;
 export const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
@@ -52,7 +52,11 @@ function validateEdits(value: unknown, duration: number): Edits {
     const end = Math.min(duration, number(c.end, 0, duration + .05));
     if (end <= start || start < previousEnd - 1e-7) return fail();
     previousEnd = end;
-    return { id: uniqueId(c.id, clipIds), start, end };
+    const zoom = c.zoom === undefined ? undefined : record(c.zoom);
+    return { id: uniqueId(c.id, clipIds), start, end,
+      ...(c.speed === undefined ? {} : { speed: number(c.speed, .25, 4) }),
+      ...(zoom ? { zoom: { scale: number(zoom.scale, 1, 4), x: number(zoom.x, 0, 1), y: number(zoom.y, 0, 1) } } : {}) };
+
   });
   if (!clips.length) return fail();
   const annotations: Annotation[] = list(e.annotations, 1000).map(value => {
@@ -106,7 +110,7 @@ export async function readProjectFile(file: File): Promise<{ source: Source; edi
   const header = await file.slice(0, HEADER_SIZE).arrayBuffer();
   if (new TextDecoder().decode(header.slice(0, 8)) !== MAGIC) throw new Error('This isn’t a snip project. Choose a .snip file saved from the editor.');
   const view = new DataView(header);
-  if (view.getUint32(8, true) !== VERSION) throw new Error('This project uses a different snip version. Update the editor and try again.');
+  if (![1, VERSION].includes(view.getUint32(8, true))) throw new Error('This project uses a different snip version. Update the editor and try again.');
   const length = view.getUint32(12, true), offset = HEADER_SIZE + length;
   if (!length || length > MAX_MANIFEST || offset >= file.size) return fail();
   let raw: unknown;

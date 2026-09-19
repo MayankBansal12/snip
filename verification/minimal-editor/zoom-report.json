@@ -1,0 +1,44 @@
+[
+  {
+    "check": "Right-click, double-click and Shift+F10 open the chosen clip; 1.75× and custom speeds persist, validate and support adjacent speed shortcuts"
+  },
+  {
+    "check": "Original-frame selection is visible, keeps its aspect ratio, clamps to all edges and moves with keyboard; one drag is one undo and output dimensions stay unchanged"
+  },
+  {
+    "check": "Seeking shows the correct eased zoom-in, pan and zoom-out at clip boundaries without changing sequence length"
+  },
+  {
+    "check": "Offline original-size export preserves custom speed, audio sync and project settings; six transition frames match independent crops",
+    "duration": "6.603000",
+    "frames": [
+      {
+        "at": 2.095233,
+        "meanPixelDifference": 0.6248148148148148
+      },
+      {
+        "at": 2.228567,
+        "meanPixelDifference": 0.4661111111111111
+      },
+      {
+        "at": 3.264511,
+        "meanPixelDifference": 0.807962962962963
+      },
+      {
+        "at": 3.361833,
+        "meanPixelDifference": 0.34953703703703703
+      },
+      {
+        "at": 4.736044,
+        "meanPixelDifference": 0.9068518518518518
+      },
+      {
+        "at": 4.836044,
+        "meanPixelDifference": 0.9433333333333334
+      }
+    ]
+  },
+  {
+    "check": "No browser errors"
+  }
+]

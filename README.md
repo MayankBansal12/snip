@@ -1,6 +1,6 @@
 # snip.
 
-A browser-only video editor for small demos. A quiet editing workspace inspired by shft.page and Emil Kowalski’s design engineering principles.
+A browser-only video editor for small demos, built with [coss UI](https://coss.com/ui), Base UI, and Tailwind CSS. A minimal preview and clip timeline, using the original neutral palette and yellow accent.
 
 ## Run
 
@@ -16,27 +16,30 @@ npm run build
 npm run preview -- --port 5186 --strictPort
 ```
 
-Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analytics, or video uploads are used. Processing runs in a Web Worker using the locally bundled FFmpeg WebAssembly engine. The first load caches the app and approximately 32 MB of engine files. Offline readiness is available in the header save-status tooltip once the cache is installed. Inter is bundled and cached locally as well.
+Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analytics, or video uploads are used. Processing runs in a Web Worker using the locally bundled FFmpeg WebAssembly engine. The first load caches the app and approximately 32 MB of engine files. Inter is bundled and cached locally as well.
 
 ## Editing
 
-- **Timeline:** actual video thumbnails, a scrubbable playhead, time ruler, and zoom. Split at the playhead, delete middle sections, and drag either edge of each clip. Remaining clips close together automatically. Preview and export both skip removed footage.
-- **Undo/redo:** splits, trims, filters, canvas changes, and annotations. Each pointer drag is one undo step. Undo history lasts for the current session.
-- **Frame:** original, landscape, portrait, square, social, classic, wide, or a custom aspect ratio. Fit the entire video with a background color and an optional inset, or fill the frame. The inset reveals a border even when the video matches the frame ratio. Choose the edit/export resolution.
-- **Crop:** free crop and aspect presets, with draggable selection and corners.
-- **Filters:** monochrome, warm, cool, soft, vivid, and original. Intensity, brightness, and contrast controls. Export uses a color lookup table derived from the same transformation as the preview.
-- **Annotate:** text, arrows, rectangles, and freehand drawing. Change color and text/stroke size, select and drag to reposition, or delete. Annotations are visible for the entire sequence and are rendered into the export.
-- **Playback:** jump to the start or end, play/pause, seek, adjust speed, and toggle audio beside the preview.
-- **Speed:** 0.25×–4×, with pitch-preserving audio. The playback selector and Speed panel control the same edit; both speed and mute apply to export.
-- **Small screens:** preview and timeline first, collapsible tools, and a preview that stays visible while changing settings. Larger trim handles, native swipe-to-scroll for a zoomed timeline, mobile undo/redo, a side-by-side layout on rotated phones, and a project menu for saving/opening projects, opening videos, or clearing the workspace.
-- **Keyboard:** press `?` for the shortcut reference, or use the keyboard button. Typing, native form controls, and modal dialogs retain their own behavior.
-- **Theme:** flat neutral light/dark surfaces with restrained amber accents (`#f0b100`) and locally bundled Inter. The choice initially follows the system preference and persists locally.
+Start by choosing **Open a video**, dropping a video onto the page, or pasting a copied video file with **Mod V** when the browser provides it as a clipboard file. Pasting text leaves the page unchanged, and pasting files during editing does not replace the active project. The start screen keeps only the theme toggle in the corner.
 
-The source video and all edit settings are stored in IndexedDB on this browser and origin. Refresh restores the project; saved projects from the original version migrate without re-uploading. “New video” replaces the current project. The trash button clears the saved project. Browser storage clearing, private browsing, or storage eviction can remove saved work.
+- **Timeline:** real thumbnails, a scrubbable playhead, and a compact timeline zoom menu. Split at the playhead and drag either clip edge to trim, with the preview following the edge. Preview and export skip removed footage.
+- **Clip actions:** double-click or right-click a clip, press Enter or Shift F10 on a focused clip, or select it and choose **Clip actions**. Change that clip’s speed or zoom, or delete it. Deleting the last clip asks before clearing the workspace.
+- **Speed:** presets from 0.25×–4×, including 1.75×, or choose **Custom…** and enter any speed within that range. Enter or leaving the field applies it. Audio keeps its pitch.
+- **Zoom:** choose a zoom level (1×–4×), then drag the selection over the original video frame to choose what stays in view. Click elsewhere to move the box there, or use arrow keys (Shift for larger steps; Home to center). The main preview updates immediately and output dimensions stay unchanged. Different clip zooms and positions ease into one another over 0.28 seconds in playback and export, capped at half the incoming clip’s duration. While actions are open, the preview shows the selected framing directly.
+- **Merge:** joins adjoining clips with matching speed and zoom. It never restores footage removed between them or discards different clip adjustments. The merge action appears when pieces can be joined. Splitting preserves the original piece’s adjustments.
+- **Undo/redo:** splits, merges, deletion, trims, clip adjustments, and audio/export settings. Each pointer drag is one undo step. History controls appear after the first edit and keep their positions; history lasts for the current session.
+- **Playback:** play/pause, scrub the timeline, mute audio, or expand the preview. The displayed time follows the edited sequence, including each clip’s speed. Adjoining clips continue decoding without seeking; trimmed gaps wait for their target frame, and media events keep playback moving if an animation-frame update is delayed.
+- **Small screens:** the same preview and timeline, compact actions, larger trim handles, and native horizontal scrolling on a zoomed timeline. Clip actions work with touch as well as a mouse and keyboard.
+- **Keyboard:** press `?` or use **Project menu → Keyboard shortcuts**. Typing, native form controls, and open popups retain their own behavior.
+- **Theme:** neutral light/dark surfaces with amber accents (`#f0b100`) and bundled Inter. The choice initially follows the system and persists locally.
+
+Frame, crop, filters, and annotations are deferred from the editing interface. Older projects retain these settings in their preview, export, and saved project files.
+
+The source video and all edit settings are stored in IndexedDB on this browser and origin. Refresh restores the project; saved projects from the original version migrate without re-uploading. “New video” replaces the current project. The project menu can clear the saved project. Browser storage clearing, private browsing, or storage eviction can remove saved work.
 
 ## Project files
 
-Choose **Project → Save project** (the **…** menu on mobile), or press **Mod S**, to download a `.snip` file to your device. It contains the original video and every edit: clips and trims, crop, frame/background, filters, all annotation types, speed/audio, and export settings. The video is not re-encoded or converted to base64; the file is roughly the source video’s size plus a small manifest.
+Choose **Project menu → Save project** (the three-dot button), or press **Mod S**, to download a `.snip` file to your device. It contains the original video and every edit: clips and trims, per-clip speed and zoom, audio and export settings, plus any legacy crop, frame, filter, or annotation settings. The video is not re-encoded or converted to base64; the file is roughly the source video’s size plus a small manifest.
 
 Use **Open project** on the start screen or in the Project menu, press **Mod Shift O**, or drop a `.snip` file into the editor. The video is embedded, so the original video file is not needed separately. Opening a project replaces the current browser workspace after validation and a successful local save. Invalid, unsupported, and incomplete files leave the existing workspace intact. Imported projects autosave and restore after refresh like ordinary videos.
 
@@ -48,7 +51,7 @@ The embedded source retains the existing 500 MB input limit. It includes footage
 
 ## Export
 
-MP4 (H.264/AAC) or WebM (VP8/Opus), maximum quality by default. Original canvas resolution and smaller 2160p, 1440p, 1080p, 720p, 480p, and 360p options are offered where applicable. Resolution refers to the short edge; encoded dimensions are even. Exports are re-encoded, not lossless copies. MP4 maximum quality uses CRF 14. No watermark is added.
+MP4 (H.264/AAC) or WebM (VP8/Opus), maximum quality by default. Original canvas resolution and smaller 2160p, 1440p, 1080p, 720p, 480p, and 360p options are offered where applicable. Resolution refers to the short edge; encoded dimensions are even. The export dialog shows a rough file-size range that updates with your settings and stays visible during processing. It uses the source file and retained footage as a guide; the completed download shows its actual size. The estimate is not a file-size limit and can vary with video content and encoding. Exports are re-encoded, not lossless copies. MP4 maximum quality uses CRF 14. No watermark is added.
 
 Input playback depends on browser codec support. MP4 with H.264 and WebM work in current Chromium. The editor is intended for short demos, with a 500 MB input limit. Large or high-resolution projects may exceed available browser memory. Keep the tab open during export; cancellation preserves edits. A frame boundary can create a small rounding difference in exported duration.
 
@@ -65,55 +68,44 @@ Press **?** to open the reference. `Mod` means ⌘ on Mac or Ctrl on Windows/Lin
 | Start / end | Home / End |
 | Split at playhead | S |
 | Trim clip start / end to playhead | I / O |
-| Delete selected clip or annotation | Delete / Backspace |
+| Delete selected clip | Delete / Backspace |
 | Undo / redo | Mod Z / Mod Shift Z; Ctrl Y also redoes |
 | Mute / unmute | M |
-| Slower / faster | [ / ] |
+| Selected clip slower / faster | [ / ] |
 | Zoom timeline out / in | − / + |
-| Frame / Crop / Filters / Annotate / Speed | 1 / 2 / 3 / 4 / 5 |
+| Open focused clip actions | Enter or Shift F10 |
 | Expand preview | F |
 | Open a video / export settings | Mod O / Mod E |
 | Save project / open project | Mod S / Mod Shift O |
-| Close mobile settings or deselect annotation | Escape |
+| Close clip actions | Escape |
 
 Text fields and selects keep their native keyboard behavior. Space activates a focused button; K remains available for playback. Editing shortcuts are suspended inside dialogs and during export. Holding a destructive key does not repeatedly modify the project. I/O trimming always preserves at least 0.1 seconds of the clip.
 
-Focus a clip edge and use left/right to trim by 0.1 seconds; Shift trims by one second. Focus the crop and use arrow keys to reposition it. Tab through the editor to reach all controls.
+Focus a clip edge and use left/right to trim by 0.1 seconds; Shift trims by one second. Tab through the editor to reach all controls.
 
 ## Verification
 
-Agent Browser is used for visual and interaction checks. `scripts/verify.mjs` exercises migration, clip editing, preview playback, annotations, dark mode, offline refresh/export, and automatic downloads. FFprobe independently checks exported files. See [verification/README.md](verification/README.md) and [verification/report.json](verification/report.json).
-
-Against a Chromium instance with a CDP port:
+The suites run in separate Chromium contexts through Playwright/CDP. Native FFmpeg and FFprobe are test tools only; app processing stays in the browser. The main suite checks selected-clip editing, history, playback boundaries, project recovery, responsive and touch controls, and offline MP4/WebM exports. It compares exported frame pixels to independent crops of the original video.
 
 ```sh
 VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 \
-VIDEO_4K_SAMPLE=/path/to/half-second-silent-4k.mp4 \
 FFPROBE_PATH=/path/to/ffprobe \
 FFMPEG_PATH=/path/to/ffmpeg \
-CDP_URL=http://127.0.0.1:19376 \
-APP_URL=http://127.0.0.1:5186 \
+CDP_URL=http://127.0.0.1:19384 \
+APP_URL=http://127.0.0.1:5195 \
 node scripts/verify.mjs
 ```
 
-The keyboard and responsive suite uses real key events and emulated touch input, including native horizontal swipes and clip-edge dragging:
+With the same environment, `scripts/verify-edited-playback.mjs` reproduces the full upload → split into four → change speed/zoom → trim → play/replay workflow through UI controls, including CPU slowdown and saved-project import; it monitors presented video frames as well as playback time. `scripts/verify-playback.mjs` exercises short clips with mixed speeds and zooms, trimmed gaps, replay, delayed frame updates, native source-end recovery, and pausing during a seek. `scripts/verify-zoom.mjs` checks right-click actions, custom speeds, direct zoom selection and undo, and independent frame comparisons during exported zoom and pan transitions. `scripts/verify-projects.mjs` checks legacy project compatibility, every persisted setting, invalid imports, storage failure recovery, offline exports, and mobile project controls. `scripts/verify-start-screen.mjs` checks the minimal start screen, themes, and file-picker, drop, and clipboard imports. Suites accept `VERIFY_OUTPUT` for their reports and screenshots. Run against a production preview for offline tests.
 
-```sh
-VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 node scripts/verify-interactions.mjs
-VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 node scripts/verify-touch-layout.mjs
-```
+Reports for the current editor are in `verification/minimal-editor/`. Earlier integration reports remain in `verification/coss-ui/`.
 
-It checks 320px, 390px, 768px, and 844px layouts, including phone landscape, input/dialog focus protection, mobile project actions, and shortcuts for editing.
+## UI components
 
-The automated suites use separate browser contexts. Native FFmpeg/FFprobe are only test tools for generating input and inspecting downloads; the app itself runs entirely in the browser.
+Application controls use the official [coss registry](https://coss.com/ui/docs/get-started): buttons, menus, popovers, dialogs, alert dialogs, selects, fields, sliders, tooltips, progress, and cards. The copied sources live in `src/components/ui`, with import aliases adapted to this Vite app. `components.json` configures the `@coss` registry for additional components.
 
-Project portability and failure recovery are checked with:
+`src/style.css` defines the existing light/dark palette as coss theme tokens and arranges the workspace. `src/media-canvas.css` contains only the video composition and clip-track rendering; these are editor-specific interactions rather than replacements for UI controls. Standard component styling stays in coss.
 
-```sh
-VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 \
-FFPROBE_PATH=/path/to/ffprobe \
-APP_URL=http://127.0.0.1:5187 \
-node scripts/verify-projects.mjs
-```
+The browser suites use `scripts/ui.mjs` to interact with coss selects and menus by their accessible roles. All suites accept `APP_URL`, `CDP_URL`, and `VERIFY_OUTPUT`. Run them against a production preview for offline tests.
 
-This suite compares the embedded source bytes and all edits, reopens in a fresh browser context offline, refreshes, exports/downloads MP4, tests invalid imports and failed storage writes, and verifies the project controls on small screens.
+Start-screen layout and file-picker, drop, and clipboard imports can be checked with `VIDEO_SAMPLE=/path/to/8-second-video.mp4 node scripts/verify-start-screen.mjs`.

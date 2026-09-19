@@ -1,15 +1,40 @@
-import { useEffect, useRef } from 'react';
-import { ArrowDownToLine, Check, Film, X } from 'lucide-react';
+import { ArrowDownToLine, Check, Film, ShieldCheck } from 'lucide-react';
 import { canvasSize, formatTime, outputSize, sequenceDuration } from '../types';
 import type { Edits, Source } from '../types';
 import { filesize } from '../media';
-export type Download={url:string;name:string;size:number};
-type Props={open:boolean;source:Source|null;edits:Edits;busy:boolean;progress:number;stage:string;download:Download|null;error:string;onUpdate:(patch:Partial<Edits>)=>void;onClose:()=>void;onExport:()=>void;onCancel:()=>void};
-export default function ExportDialog(p:Props){
-  const ref=useRef<HTMLDialogElement>(null);
-  useEffect(()=>{if(p.open)ref.current?.showModal();else ref.current?.close();},[p.open]);
-  const output=p.source?outputSize(p.source,p.edits):{width:0,height:0};const canvas=p.source?canvasSize(p.source,p.edits):output;
-  return <dialog ref={ref} className="export-dialog" aria-labelledby="export-title" onCancel={e=>{if(p.busy)e.preventDefault();else p.onClose();}} onClick={e=>{if(e.target===e.currentTarget&&!p.busy)p.onClose();}}><div className="dialog-content"><div className="dialog-heading"><h2 id="export-title">{p.download?'All yours.':p.busy?'A little moment.':'Ready to go?'}</h2><button className="icon-button" aria-label="Close export" disabled={p.busy} onClick={p.onClose}><X size={18}/></button></div>
-    {p.download?<div className="export-complete"><div className="success-icon"><Check size={24}/></div><p>Your video is ready.</p><span>{output.width} × {output.height} · {formatTime(sequenceDuration(p.edits))} · {filesize(p.download.size)}</span><a className="primary-button" href={p.download.url} download={p.download.name}><ArrowDownToLine size={16}/>Download again</a><button className="text-button" onClick={p.onClose}>Back to editing</button></div>:p.busy?<div className="export-progress"><div className="progress-label"><span>{p.stage}</span><span>{Math.round(p.progress*100)}%</span></div><progress value={p.progress} max="1"/><p>Keep this tab open. Everything happens right here.</p><button className="text-button" onClick={p.onCancel}>Cancel export</button></div>:<><p className="dialog-subtitle">One last look, then it’s yours.</p><div className="export-fields"><label>Format<select aria-label="Export format" value={p.edits.format} onChange={e=>p.onUpdate({format:e.target.value as Edits['format']})}><option value="mp4">MP4 · widely supported</option><option value="webm">WebM · VP8</option></select></label><label>Resolution<select aria-label="Export resolution" value={p.edits.resolution} onChange={e=>p.onUpdate({resolution:e.target.value})}><option value="original">Original · {canvas.width} × {canvas.height}</option>{[2160,1440,1080,720,480,360].filter(n=>n<Math.min(canvas.width,canvas.height)).map(n=>{const size=p.source?outputSize(p.source,{...p.edits,resolution:String(n)}):output;return<option key={n} value={n}>{n}p · {size.width} × {size.height}</option>;})}</select></label><label>Quality<select aria-label="Export quality" value={p.edits.quality} onChange={e=>p.onUpdate({quality:e.target.value})}><option value="maximum">Maximum quality</option><option value="compact">Smaller file</option></select></label></div><div className="export-summary"><Film size={15}/><span>{formatTime(sequenceDuration(p.edits))}<span>·</span>{output.width} × {output.height}<span>·</span>{p.edits.clips.length} {p.edits.clips.length===1?'clip':'clips'}</span></div>{p.error&&<div className="inline-error" role="alert">{p.error}</div>}<button className="primary-button export-action" onClick={p.onExport}><ArrowDownToLine size={16}/>Export & download</button><p className="dialog-privacy">no watermark. no upload. just your video.</p></>}
-  </div></dialog>;
+import { estimateExportSize, formatSizeEstimate } from '../export-estimate';
+import EditorSelect from './EditorSelect';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogDescription, DialogPanel, DialogFooter } from './ui/dialog';
+import { Field, FieldLabel } from './ui/field';
+import { Progress, ProgressLabel, ProgressValue, ProgressTrack, ProgressIndicator } from './ui/progress';
+import { Alert, AlertDescription } from './ui/alert';
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from './ui/empty';
+export type Download = { url: string; name: string; size: number };
+type Props = { open: boolean; source: Source | null; edits: Edits; busy: boolean; progress: number; stage: string; download: Download | null; error: string; onUpdate: (patch: Partial<Edits>) => void; onClose: () => void; onExport: () => void; onCancel: () => void };
+export default function ExportDialog(p: Props) {
+  const output = p.source ? outputSize(p.source,p.edits) : { width: 0, height: 0 }, canvas = p.source ? canvasSize(p.source,p.edits) : output;
+  const estimate = p.source ? estimateExportSize(p.source, p.edits) : null;
+  const sizeHint = estimate && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Estimated size: <span className="font-medium tabular-nums text-foreground">{formatSizeEstimate(estimate)}</span><span className="block mt-1">Actual size may vary.</span></p>;
+  const resolutionOptions = [{ value: 'original', label: `Original · ${canvas.width} × ${canvas.height}` }, ...[2160,1440,1080,720,480,360].filter(n => n < Math.min(canvas.width,canvas.height)).map(n => { const size = p.source ? outputSize(p.source,{ ...p.edits, resolution: String(n) }) : output; return { value: String(n), label: `${n}p · ${size.width} × ${size.height}` }; })];
+  return <Dialog open={p.open} onOpenChange={open => { if (!open && !p.busy) p.onClose(); }}>
+    <DialogPopup className="export-dialog" showCloseButton={!p.busy} closeProps={{ 'aria-label': 'Close export' }}>
+      <DialogHeader><DialogTitle>{p.download ? 'Your video is ready' : p.busy ? 'Creating your video' : 'Export video'}</DialogTitle><DialogDescription>{p.download ? 'All yours. Ready to share.' : p.busy ? 'Keep this tab open. Processing stays on this device.' : 'Choose the finishing touches for your download.'}</DialogDescription></DialogHeader>
+      <DialogPanel>
+        {p.download ? <Empty className="py-6 md:py-6"><EmptyHeader><EmptyMedia variant="icon"><Check className="text-success-foreground" /></EmptyMedia><EmptyTitle>Export complete</EmptyTitle><EmptyDescription>{output.width} × {output.height} · {formatTime(sequenceDuration(p.edits))} · {filesize(p.download.size)}</EmptyDescription></EmptyHeader></Empty> : p.busy ? <div className="space-y-4 py-8"><Progress value={Math.round(p.progress*100)}><div className="flex justify-between gap-4"><ProgressLabel>{p.stage || 'Preparing export…'}</ProgressLabel><ProgressValue /></div><ProgressTrack><ProgressIndicator /></ProgressTrack></Progress>{sizeHint}</div> : <div className="flex flex-col gap-5">
+          <Field><FieldLabel>Format</FieldLabel><EditorSelect label="Export format" value={p.edits.format} options={[{ value: 'mp4', label: 'MP4 · widely supported' }, { value: 'webm', label: 'WebM · VP8' }]} onChange={format => p.onUpdate({ format: format as Edits['format'] })} /></Field>
+          <Field><FieldLabel>Resolution</FieldLabel><EditorSelect label="Export resolution" value={p.edits.resolution} options={resolutionOptions} onChange={resolution => p.onUpdate({ resolution })} /></Field>
+          <Field><FieldLabel>Quality</FieldLabel><EditorSelect label="Export quality" value={p.edits.quality} options={[{ value: 'maximum', label: 'Maximum quality' }, { value: 'compact', label: 'Smaller file' }]} onChange={quality => p.onUpdate({ quality })} /></Field>
+          <div className="flex flex-wrap items-center gap-2"><Badge variant="outline"><Film />{formatTime(sequenceDuration(p.edits))}</Badge><Badge variant="outline">{output.width} × {output.height}</Badge><Badge variant="outline">{p.edits.clips.length} {p.edits.clips.length === 1 ? 'clip' : 'clips'}</Badge></div>
+          {sizeHint}
+          {p.error && <Alert variant="error"><AlertDescription>{p.error}</AlertDescription></Alert>}
+          <p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-3.5" />No watermark. No upload. Just your video.</p>
+        </div>}
+      </DialogPanel>
+      <DialogFooter>
+        {p.download ? <><Button variant="outline" onClick={p.onClose}>Back to editing</Button><Button render={<a href={p.download.url} download={p.download.name} />}><ArrowDownToLine />Download again</Button></> : p.busy ? <Button variant="outline" onClick={p.onCancel}>Cancel export</Button> : <><Button variant="outline" onClick={p.onClose}>Keep editing</Button><Button onClick={p.onExport}><ArrowDownToLine />Export & download</Button></>}
+      </DialogFooter>
+    </DialogPopup>
+  </Dialog>;
 }

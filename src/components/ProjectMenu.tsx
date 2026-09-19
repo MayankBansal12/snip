@@ -1,21 +1,20 @@
-import { useEffect, useRef } from 'react';
-import { Download, FolderOpen, Keyboard, Moon, Plus, Sun, Trash2, X } from 'lucide-react';
-type Props={open:boolean;theme:string;onClose:()=>void;onOpen:()=>void;onOpenProject:()=>void;onSaveProject:()=>void;onTheme:()=>void;onHelp:()=>void;onClear:()=>void};
-export default function ProjectMenu(p:Props) {
-  const ref=useRef<HTMLDialogElement>(null);
-  useEffect(()=>{if(p.open)ref.current?.showModal();else ref.current?.close();},[p.open]);
-  const action=(callback:()=>void)=>{p.onClose();callback();};
-  return <dialog ref={ref} className="project-dialog" aria-labelledby="project-title" onCancel={p.onClose} onClick={e=>{if(e.target===e.currentTarget)p.onClose();}}>
-    <div className="dialog-heading"><h2 id="project-title">Your workspace</h2><button className="icon-button" aria-label="Close project menu" onClick={p.onClose} autoFocus><X size={18}/></button></div>
-    <p className="project-note">Keep your video and edits in one .snip file.</p>
-    <div className="project-actions">
-      <button aria-label="Save project" aria-keyshortcuts="Control+S Meta+S" onClick={()=>action(p.onSaveProject)}><Download size={18}/>Save project<span className="project-extension" aria-hidden="true">.snip</span></button>
-      <button aria-keyshortcuts="Control+Shift+O Meta+Shift+O" onClick={()=>action(p.onOpenProject)}><FolderOpen size={18}/>Open project</button>
-      <div className="project-separator"/>
-      <button onClick={()=>action(p.onOpen)}><Plus size={18}/>New video</button>
-      <button onClick={()=>action(p.onTheme)}>{p.theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}Switch to {p.theme==='dark'?'light':'dark'} mode</button>
-      <button onClick={()=>action(p.onHelp)}><Keyboard size={18}/>Keyboard shortcuts</button>
-      <button className="danger" onClick={()=>action(p.onClear)}><Trash2 size={18}/>Clear saved video</button>
-    </div>
-  </dialog>;
+import { MoreHorizontal, Download, FolderOpen, Keyboard, Moon, Plus, Sun, Trash2 } from 'lucide-react';
+import { Button } from './ui/button';
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from './ui/menu';
+type Props = { filename: string; disabled: boolean; theme: string; onOpenChange: (open: boolean) => void; onOpen: () => void; onOpenProject: () => void; onSaveProject: () => void; onTheme: () => void; onHelp: () => void; onClear: () => void };
+export default function ProjectMenu(p: Props) {
+  return <Menu onOpenChange={p.onOpenChange}>
+    <MenuTrigger render={<Button variant="ghost" size="icon" />} disabled={p.disabled} aria-label="Project menu"><MoreHorizontal /></MenuTrigger>
+    <MenuPopup align="end" className="min-w-64">
+      <MenuGroup><MenuGroupLabel className="max-w-64 truncate" title={p.filename}>{p.filename}</MenuGroupLabel>
+      <MenuItem onClick={p.onSaveProject}><Download />Save project<MenuShortcut aria-hidden="true">.snip</MenuShortcut></MenuItem>
+      <MenuItem onClick={p.onOpenProject}><FolderOpen />Open project</MenuItem></MenuGroup>
+      <MenuSeparator />
+      <MenuItem onClick={p.onOpen}><Plus />New video</MenuItem>
+      <MenuItem className="sm:hidden" onClick={p.onTheme}>{p.theme === 'dark' ? <Sun /> : <Moon />}Switch to {p.theme === 'dark' ? 'light' : 'dark'} mode</MenuItem>
+      <MenuItem onClick={p.onHelp}><Keyboard />Keyboard shortcuts<MenuShortcut aria-hidden="true">?</MenuShortcut></MenuItem>
+      <MenuSeparator />
+      <MenuItem variant="destructive" onClick={p.onClear}><Trash2 />Clear saved video</MenuItem>
+    </MenuPopup>
+  </Menu>;
 }
