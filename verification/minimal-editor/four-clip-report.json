@@ -1,0 +1,88 @@
+{
+  "app": "/assets/index-Blz3qZLo.js",
+  "clips": [
+    {
+      "id": "cdd72a80-dcf1-4223-9a46-6027e9c87902",
+      "start": 0,
+      "end": 1.9
+    },
+    {
+      "id": "3ec4d4c2-a650-43c9-99fa-7a761771a24d",
+      "start": 2,
+      "end": 3.6999999999999997,
+      "speed": 1.75,
+      "zoom": {
+        "scale": 2,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "9f32bc74-bd53-4f54-ae8c-2b2327a3b980",
+      "start": 4.199999999999999,
+      "end": 6,
+      "speed": 0.5,
+      "zoom": {
+        "scale": 3,
+        "x": 1,
+        "y": 1
+      }
+    },
+    {
+      "id": "bab78238-8cf8-4ecb-9205-9545cc69200b",
+      "start": 6.1,
+      "end": 8,
+      "speed": 1.37,
+      "zoom": {
+        "scale": 1.5,
+        "x": 0.5000922736220472,
+        "y": 0.5
+      }
+    }
+  ],
+  "runs": [
+    {
+      "label": "Four adjoining clips with zoom, 1.75×, 0.5× and custom 1.37× speed",
+      "reason": "completed",
+      "displayedFrames": 232,
+      "maxProgressGapMs": 56.700000047683716,
+      "maxPictureGapMs": 145.40000002384204
+    },
+    {
+      "label": "Replay from the edited end",
+      "reason": "completed",
+      "displayedFrames": 219,
+      "maxProgressGapMs": 54.299999952316284,
+      "maxPictureGapMs": 100
+    },
+    {
+      "label": "Four clips with three trimmed gaps, zoom and speed changes",
+      "reason": "completed",
+      "displayedFrames": 213,
+      "maxProgressGapMs": 350.09999990463257,
+      "maxPictureGapMs": 383.3000000000029
+    },
+    {
+      "label": "The same edited sequence with 6× CPU slowdown",
+      "reason": "completed",
+      "displayedFrames": 181,
+      "maxProgressGapMs": 370.5,
+      "maxPictureGapMs": 383.3000000000029
+    },
+    {
+      "label": "Offline playback after refresh restores all four clips",
+      "reason": "completed",
+      "displayedFrames": 203,
+      "maxProgressGapMs": 346.90000009536743,
+      "maxPictureGapMs": 383.40000000000055
+    },
+    {
+      "label": "Offline playback after importing the saved project",
+      "reason": "completed",
+      "displayedFrames": 198,
+      "maxProgressGapMs": 300.10000002384186,
+      "maxPictureGapMs": 349.8999999999978
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "check": "Short adjoining clips with speeds from 0.25× to 4× and different zooms play and replay without boundary seeks"
+  },
+  {
+    "check": "Playback crosses trimmed gaps with changing speed and zoom, visits every clip and stops at the edited end"
+  },
+  {
+    "check": "Delayed animation frames do not strand playback at a clip boundary; media progress events keep the sequence moving"
+  },
+  {
+    "check": "A native source-ended event recovers the next clip even when frame callbacks and timeupdate both miss the boundary"
+  },
+  {
+    "check": "Pausing during a gap seek cancels automatic resume; an explicit Play continues the sequence"
+  },
+  {
+    "check": "No browser errors"
+  }
+]

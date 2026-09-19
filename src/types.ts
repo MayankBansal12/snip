@@ -1,5 +1,9 @@
 export type Crop = { x: number; y: number; width: number; height: number };
-export type Clip = { id: string; start: number; end: number };
+export type ClipZoom = { scale: number; x: number; y: number };
+export type Clip = { id: string; start: number; end: number; speed?: number; zoom?: ClipZoom };
+export const speedPresets: readonly number[] = [.25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
+export const MIN_SPEED = .25, MAX_SPEED = 4;
+export const defaultZoom: ClipZoom = { scale: 1, x: .5, y: .5 };
 export type Annotation = {
   id: string; type: 'text' | 'arrow' | 'rectangle' | 'pen';
   x: number; y: number; width: number; height: number;
@@ -12,7 +16,6 @@ export type Edits = {
   annotations: Annotation[]; resolution: string; format: 'mp4' | 'webm'; quality: string; muted: boolean;
 };
 export type Source = { file: Blob; name: string; width: number; height: number; duration: number };
-export type Tool = 'canvas' | 'crop' | 'filters' | 'annotate' | 'speed';
 export const uid = () => crypto.randomUUID();
 export const fullCrop: Crop = { x: 0, y: 0, width: 1, height: 1 };
 export const defaults = (duration: number): Edits => ({
@@ -36,23 +39,36 @@ export function formatTime(seconds: number, precise = true) {
   return `${Math.floor(rounded / 60)}:${(rounded % 60).toFixed(precise ? 1 : 0).padStart(precise ? 4 : 2, '0')}`;
 }
 export const even = (n: number) => Math.max(2, Math.floor((n + 1e-7) / 2) * 2);
-export const sequenceDuration = (edits: Edits) => edits.clips.reduce((n, c) => n + c.end - c.start, 0) / edits.speed;
+export const clipSpeed = (clip: Clip, edits: Edits) => clip.speed ?? edits.speed;
+export const clipDuration = (clip: Clip, edits: Edits) => (clip.end - clip.start) / clipSpeed(clip, edits);
+export const sequenceDuration = (edits: Edits) => edits.clips.reduce((n, c) => n + clipDuration(c, edits), 0);
 export function toSourceTime(time: number, edits: Edits): { time: number; index: number } {
-  let remaining = Math.max(0, time * edits.speed);
+  let remaining = Math.max(0, time);
   for (let i = 0; i < edits.clips.length; i++) {
-    const clip = edits.clips[i];
-    if (remaining < clip.end - clip.start || i === edits.clips.length - 1) return { time: clamp(clip.start + remaining, clip.start, clip.end), index: i };
-    remaining -= clip.end - clip.start;
+    const clip = edits.clips[i], duration = clipDuration(clip, edits);
+    if (remaining < duration || i === edits.clips.length - 1) return { time: clamp(clip.start + remaining * clipSpeed(clip, edits), clip.start, clip.end), index: i };
+    remaining -= duration;
   }
   return { time: 0, index: 0 };
 }
 export function toSequenceTime(time: number, edits: Edits) {
   let elapsed = 0;
   for (const clip of edits.clips) {
-    if (time <= clip.end) return (elapsed + clamp(time - clip.start, 0, clip.end - clip.start)) / edits.speed;
-    elapsed += clip.end - clip.start;
+    if (time < clip.end) return elapsed + clamp(time - clip.start, 0, clip.end - clip.start) / clipSpeed(clip, edits);
+    elapsed += clipDuration(clip, edits);
   }
-  return elapsed / edits.speed;
+  return elapsed;
+}
+// Zoom within the existing crop, keeping the output frame and legacy framing intact.
+export function clipCrop(edits: Edits, clip?: Clip): Crop {
+  const { scale, x, y } = clip?.zoom ?? defaultZoom, base = edits.crop;
+  const width = base.width / scale, height = base.height / scale;
+  return { width, height, x: base.x + (base.width - width) * x, y: base.y + (base.height - height) * y };
+}
+export function canMergeClips(left: Clip | undefined, right: Clip | undefined, edits: Edits) {
+  if (!left || !right || Math.abs(left.end - right.start) > 1e-7 || clipSpeed(left, edits) !== clipSpeed(right, edits)) return false;
+  const a = left.zoom ?? defaultZoom, b = right.zoom ?? defaultZoom;
+  return a.scale === b.scale && (a.scale === 1 || (a.x === b.x && a.y === b.y));
 }
 export function cropPixels(source: Source, crop: Crop) {
   const width = even(source.width * crop.width), height = even(source.height * crop.height);

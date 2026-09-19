@@ -5,16 +5,16 @@ const groups = [
   { title: 'Playback', items: [
     ['Play / pause', 'Space', 'K'], ['Nudge 1/30 second', '← / →'], ['Move 1 second', 'Shift', '← / →'],
     ['Previous / next cut', '↑ / ↓'], ['Start / end', 'Home / End'], ['Mute / unmute', 'M'],
-    ['Slower / faster', '[ / ]'], ['Expand preview', 'F'],
+    ['Selected clip slower / faster', '[ / ]'], ['Expand preview', 'F'],
   ] },
   { title: 'Editing', items: [
-    ['Split at playhead', 'S'], ['Trim clip start to playhead', 'I'], ['Trim clip end to playhead', 'O'],
-    ['Delete selected clip or annotation', 'Delete'], ['Undo', mod, 'Z'], ['Redo', mod, 'Shift', 'Z'],
+    ['Open focused clip actions', 'Enter'], ['Split at playhead', 'S'], ['Trim clip start to playhead', 'I'], ['Trim clip end to playhead', 'O'],
+    ['Delete selected clip', 'Delete'], ['Undo', mod, 'Z'], ['Redo', mod, 'Shift', 'Z'],
     ['Zoom timeline out / in', '− / +'],
   ] },
   { title: 'Workspace', items: [
-    ['Frame · Crop · Filters · Annotate · Speed', '1–5'], ['Open a video', mod, 'O'], ['Export settings', mod, 'E'],
-    ['Save project', mod, 'S'], ['Open project', mod, 'Shift', 'O'], ['Keyboard shortcuts', '?'], ['Close panel / deselect', 'Esc'],
+    ['Open a video', mod, 'O'], ['Export settings', mod, 'E'],
+    ['Save project', mod, 'S'], ['Open project', mod, 'Shift', 'O'], ['Keyboard shortcuts', '?'], ['Close clip actions', 'Esc'],
   ] },
 ];
 export default function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
