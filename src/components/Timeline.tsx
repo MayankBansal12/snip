@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import { Minus, Plus, Scissors, Trash2, Undo2, Redo2 } from 'lucide-react';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Card } from './ui/card';
+import { Kbd } from './ui/kbd';
+import IconButton from './IconButton';
 import { clamp, formatTime, sequenceDuration } from '../types';
 import type { Clip, Edits, Source } from '../types';
 type Props = { zoom:number; onZoom:(zoom:number)=>void; onUndo:()=>void; onRedo:()=>void; canUndo:boolean; canRedo:boolean; source: Source; edits: Edits; time: number; selected: string; frames: { url: string; time: number }[]; onSelect: (id: string) => void; onSeek: (time: number) => void; onClips: (clips: Clip[]) => void; onCheckpoint: () => void; onSplit: () => void; onDelete: () => void; canSplit: boolean };
@@ -30,8 +35,8 @@ export default function Timeline({zoom,onZoom,onUndo,onRedo,canUndo,canRedo,sour
   const end=(e:PointerEvent)=>{if(drag.current?.pointer===e.pointerId){drag.current=null;setTrimming(null);}if(scrubbing.current===e.pointerId)scrubbing.current=null;};
   const removed=source.duration-duration*edits.speed;
   let offset=0;
-  return <section className="timeline" aria-label="Video timeline">
-    <div className="timeline-toolbar"><div className="timeline-actions"><button className="quiet-button" disabled={!canSplit} onClick={onSplit} title="Split at playhead (S)" aria-keyshortcuts="S"><Scissors size={14}/>Split<kbd>S</kbd></button><button className="quiet-button" disabled={edits.clips.length<2} onClick={onDelete} title="Delete selected clip (Delete)" aria-keyshortcuts="Delete Backspace"><Trash2 size={14}/>Delete clip</button></div><div className="mobile-history"><button className="icon-button" aria-label="Undo" title="Undo" disabled={!canUndo} onClick={onUndo}><Undo2 size={17}/></button><button className="icon-button" aria-label="Redo" title="Redo" disabled={!canRedo} onClick={onRedo}><Redo2 size={17}/></button></div><div className="timeline-meta"><span>{edits.clips.length} {edits.clips.length===1?'clip':'clips'}</span><span className="divider"/><button className="icon-button" aria-label="Zoom timeline out" title="Zoom timeline out (−)" aria-keyshortcuts="-" disabled={zoom===1} onClick={()=>onZoom(Math.max(1,zoom-1))}><Minus size={13}/></button><span className="zoom-label">{zoom}×</span><button className="icon-button" aria-label="Zoom timeline in" title="Zoom timeline in (+)" aria-keyshortcuts="+" disabled={zoom===8} onClick={()=>onZoom(Math.min(8,zoom+1))}><Plus size={13}/></button></div></div>
+  return <Card render={<section aria-label="Video timeline" />} className="timeline">
+    <div className="timeline-toolbar mb-4 flex flex-wrap items-center justify-between gap-2"><div className="timeline-actions flex items-center gap-2"><Button size="sm" variant="outline" disabled={!canSplit} onClick={onSplit} aria-keyshortcuts="S"><Scissors />Split<Kbd className="hidden sm:inline-flex">S</Kbd></Button><Button size="sm" variant="ghost" disabled={edits.clips.length<2} onClick={onDelete} aria-keyshortcuts="Delete Backspace"><Trash2 />Delete clip</Button></div><div className="mobile-history flex min-[901px]:hidden"><IconButton label="Undo" disabled={!canUndo} onClick={onUndo}><Undo2 /></IconButton><IconButton label="Redo" disabled={!canRedo} onClick={onRedo}><Redo2 /></IconButton></div><div className="timeline-meta flex items-center gap-1"><Badge variant="secondary" className="mr-3 hidden sm:inline-flex">{edits.clips.length} {edits.clips.length===1?'clip':'clips'}</Badge><IconButton label="Zoom timeline out" disabled={zoom===1} onClick={()=>onZoom(Math.max(1,zoom-1))}><Minus /></IconButton><span className="zoom-label w-6 text-center font-mono text-xs text-muted-foreground">{zoom}×</span><IconButton label="Zoom timeline in" disabled={zoom===8} onClick={()=>onZoom(Math.min(8,zoom+1))}><Plus /></IconButton></div></div>
     <div ref={scroll} className="timeline-scroll"><div className="timeline-inner" style={{width:`${zoom*100}%`}}><div className="ruler" onPointerDown={startScrub} onPointerMove={e=>{if(scrubbing.current===e.pointerId)seek(e);}} onPointerUp={end} onPointerCancel={end}>{ticks.map(t=><span key={t} style={{left:`${t/Math.max(duration,.001)*100}%`}}>{formatTime(t,tickStep<1)}</span>)}</div>
       <div ref={track} className="clip-track">
         {edits.clips.map((clip,index)=>{
@@ -45,6 +50,6 @@ export default function Timeline({zoom,onZoom,onUndo,onRedo,canUndo,canRedo,sour
         <div className="playhead" style={{left:`${clamp(time/Math.max(duration,.001),0,1)*100}%`}} onPointerDown={startScrub} onPointerMove={e=>{if(scrubbing.current===e.pointerId)seek(e);}} onPointerUp={end} onPointerCancel={end}><span/><i/></div>
       </div>
     </div></div>
-    <div className="timeline-foot"><span><span className="desktop-timeline-hint">Drag clip edges to trim. Split to cut out the middle.</span><span className="touch-timeline-hint">Tap a clip. Drag its edges to trim.</span></span><span>{removed>.05?`${formatTime(removed)} removed`:'Your original stays untouched'}</span></div>
-  </section>;
+    <div className="timeline-foot"><span><span className="desktop-timeline-hint hidden sm:inline">Drag clip edges to trim. Split to cut out the middle.</span><span className="touch-timeline-hint sm:hidden">Tap a clip. Drag its edges to trim.</span></span><span>{removed>.05?`${formatTime(removed)} removed`:'Your original stays untouched'}</span></div>
+  </Card>;
 }

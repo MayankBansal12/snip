@@ -1,0 +1,59 @@
+[
+  {
+    "check": "Save downloads one portable file containing unchanged source bytes and every edit",
+    "bytes": 4913026,
+    "sourceBytes": 4911105,
+    "clips": 2,
+    "annotations": 4
+  },
+  {
+    "check": "A fresh browser workspace opens the project offline with Ctrl Shift O"
+  },
+  {
+    "check": "Imported source and all edits survive an offline refresh"
+  },
+  {
+    "check": "Project menu saves again offline without changing video or edits"
+  },
+  {
+    "check": "Malformed, truncated, unsupported and invalid project files preserve the existing workspace",
+    "cases": [
+      "wrong signature",
+      "newer version",
+      "truncated video",
+      "excessive manifest",
+      "empty clips",
+      "out-of-range trim",
+      "invalid crop",
+      "invalid speed",
+      "invalid frame",
+      "duplicate IDs",
+      "unknown export setting"
+    ]
+  },
+  {
+    "check": "A failed storage transaction leaves the previous project intact"
+  },
+  {
+    "check": "The same file can be retried after an import failure"
+  },
+  {
+    "check": "Reopened project exports and downloads MP4 entirely offline",
+    "width": 360,
+    "height": 640,
+    "duration": "4.000000",
+    "bytes": "138237"
+  },
+  {
+    "check": "A downloaded project restores work after browser autosave is cleared"
+  },
+  {
+    "check": "Mobile project open/save works offline; controls fit 320px, 390px and phone landscape"
+  },
+  {
+    "check": "Drag and drop recognizes .snip projects"
+  },
+  {
+    "check": "No browser errors, cookies, uploads, or external requests"
+  }
+]
