@@ -1,40 +1,94 @@
-import { ArrowUpRight, Check, MousePointer2, PenLine, RectangleHorizontal, Trash2, Type } from 'lucide-react';
+import { ArrowUpRight, Check, MousePointer2, PenLine, RectangleHorizontal, RotateCcw, Trash2, Type } from 'lucide-react';
+import { useRef } from 'react';
 import { canvasSize, cropPixels, fullCrop, outputSize, placement, ratios, uid } from '../types';
 import type { Annotation, Edits, Source, Tool } from '../types';
 import { filters } from '../effects';
 import type { DrawMode } from './Preview';
-type Props={hidden:boolean;onClose:()=>void;source:Source;edits:Edits;tool:Tool;selectedAnnotation:string|null;drawMode:DrawMode;drawColor:string;thumbnail?:string;onUpdate:(patch:Partial<Edits>,record?:boolean)=>void;onCheckpoint:()=>void;onAnnotation:(id:string|null)=>void;onDrawMode:(mode:DrawMode)=>void;onDrawColor:(color:string)=>void};
-const names:Record<Tool,string>={canvas:'Frame',crop:'Crop',filters:'Filters',annotate:'Annotate',speed:'Speed'};
-const filterCSS:Record<string,string>={Original:'none',Mono:'grayscale(1)',Warm:'sepia(.3) saturate(1.2)',Cool:'saturate(.8) hue-rotate(12deg)',Soft:'contrast(.85) brightness(1.1)',Vivid:'saturate(1.4) contrast(1.1)'};
-export default function ToolPanel(p:Props){
-  const {source,edits,tool,onUpdate}=p;const custom={width:edits.canvas.customWidth||16,height:edits.canvas.customHeight||9};
-  const colors=['#ffffff','#1a1d18','#e8e76a','#f599a7','#9bc772','#8eb8fa'];
-  const annotation=edits.annotations.find(a=>a.id===p.selectedAnnotation);
-  const pixels=cropPixels(source,edits.crop),canvas=canvasSize(source,edits),output=outputSize(source,edits);
-  const placed=placement(source,edits,canvas);
-  const backgroundVisible=placed.width<canvas.width-2||placed.height<canvas.height-2;
-  const editAnnotation=(patch:Partial<Annotation>,record=true)=>{if(annotation)onUpdate({annotations:edits.annotations.map(a=>a.id===annotation.id?{...a,...patch}:a)},record);};
-  const addText=()=>{const a:Annotation={id:uid(),type:'text',text:'Your text',x:.5,y:.78,width:0,height:0,color:p.drawColor,size:.065};onUpdate({annotations:[...edits.annotations,a]});p.onAnnotation(a.id);p.onDrawMode('select');};
-  const chooseCrop=(aspect:string)=>{
-    if(aspect==='Original'){onUpdate({cropAspect:aspect,crop:{...fullCrop}});return;}
-    if(aspect==='Free'){onUpdate({cropAspect:aspect});return;}
-    const r=ratios[aspect]/(source.width/source.height),width=Math.min(1,r),height=Math.min(1,1/r);
-    onUpdate({cropAspect:aspect,crop:{x:(1-width)/2,y:(1-height)/2,width,height}});
+import EditorSelect from './EditorSelect';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Field, FieldLabel, FieldDescription } from './ui/field';
+import { Input } from './ui/input';
+import { Slider } from './ui/slider';
+import { Switch } from './ui/switch';
+import { Separator } from './ui/separator';
+import { Textarea } from './ui/textarea';
+import { Tabs, TabsList, TabsTab } from './ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
+
+type Props = { hidden: boolean; onClose: () => void; source: Source; edits: Edits; tool: Tool; selectedAnnotation: string | null; drawMode: DrawMode; drawColor: string; thumbnail?: string; onUpdate: (patch: Partial<Edits>, record?: boolean) => void; onCheckpoint: () => void; onAnnotation: (id: string | null) => void; onDrawMode: (mode: DrawMode) => void; onDrawColor: (color: string) => void };
+const names: Record<Tool, string> = { canvas: 'Frame', crop: 'Crop', filters: 'Filters', annotate: 'Annotate', speed: 'Speed' };
+const intros: Record<Tool, string> = { canvas: 'Make room for your story.', crop: 'Bring the details into focus.', filters: 'Find the right atmosphere.', annotate: 'Point out what matters.', speed: 'Set your own pace.' };
+const filterCSS: Record<string, string> = { Original: 'none', Mono: 'grayscale(1)', Warm: 'sepia(.3) saturate(1.2)', Cool: 'saturate(.8) hue-rotate(12deg)', Soft: 'contrast(.85) brightness(1.1)', Vivid: 'saturate(1.4) contrast(1.1)' };
+const presets = [{ name: 'Original', ratio: null, label: 'Original' }, { name: '16:9', ratio: 16/9, label: 'Landscape' }, { name: '9:16', ratio: 9/16, label: 'Portrait' }, { name: '1:1', ratio: 1, label: 'Square' }, { name: '4:5', ratio: 4/5, label: 'Social' }, { name: '4:3', ratio: 4/3, label: 'Classic' }, { name: '21:9', ratio: 21/9, label: 'Wide' }, { name: 'Custom', ratio: null, label: 'Custom' }];
+
+function PropertySlider({ label, value, min, max, onChange, onCheckpoint, suffix = '' }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void; onCheckpoint: () => void; suffix?: string }) {
+  const changing = useRef(false);
+  return <Field className="gap-4">
+    <div className="flex w-full items-center justify-between"><FieldLabel>{label}</FieldLabel><Badge variant="outline" className="font-mono tabular-nums">{value}{suffix}</Badge></div>
+    <Slider aria-label={label} value={value} min={min} max={max}
+      onValueChange={next => { if (!changing.current) { onCheckpoint(); changing.current = true; } onChange(Array.isArray(next) ? next[0] : next); }}
+      onValueCommitted={() => { changing.current = false; }} />
+  </Field>;
+}
+
+export default function ToolPanel(p: Props) {
+  const { source, edits, tool, onUpdate } = p;
+  const custom = { width: edits.canvas.customWidth || 16, height: edits.canvas.customHeight || 9 };
+  const annotation = edits.annotations.find(a => a.id === p.selectedAnnotation);
+  const pixels = cropPixels(source, edits.crop), canvas = canvasSize(source, edits), output = outputSize(source, edits);
+  const placed = placement(source, edits, canvas);
+  const backgroundVisible = placed.width < canvas.width - 2 || placed.height < canvas.height - 2;
+  const editAnnotation = (patch: Partial<Annotation>, record = true) => { if (annotation) onUpdate({ annotations: edits.annotations.map(a => a.id === annotation.id ? { ...a, ...patch } : a) }, record); };
+  const addText = () => { const a: Annotation = { id: uid(), type: 'text', text: 'Your text', x: .5, y: .78, width: 0, height: 0, color: p.drawColor, size: .065 }; onUpdate({ annotations: [...edits.annotations, a] }); p.onAnnotation(a.id); p.onDrawMode('select'); };
+  const chooseCrop = (aspect: string) => {
+    if (aspect === 'Original') { onUpdate({ cropAspect: aspect, crop: { ...fullCrop } }); return; }
+    if (aspect === 'Free') { onUpdate({ cropAspect: aspect }); return; }
+    const r = ratios[aspect] / (source.width / source.height), width = Math.min(1,r), height = Math.min(1,1/r);
+    onUpdate({ cropAspect: aspect, crop: { x: (1-width)/2, y: (1-height)/2, width, height } });
   };
-  const slider=(label:string,value:number,min:number,max:number,change:(v:number)=>void,suffix='')=><label className="property-slider"><span>{label}<output>{value}{suffix}</output></span><input type="range" aria-label={label} min={min} max={max} value={value} onPointerDown={p.onCheckpoint} onKeyDown={e=>{if(e.key.startsWith('Arrow'))p.onCheckpoint();}} onChange={e=>change(Number(e.target.value))}/></label>;
-  return <aside id="tool-settings" hidden={p.hidden} className="inspector" aria-label={`${names[tool]} settings`}><div className="inspector-title"><h2>{names[tool]}</h2><span>{tool==='canvas'?'01':tool==='crop'?'02':tool==='filters'?'03':tool==='annotate'?'04':'05'}</span><button className="close-settings text-button" onClick={p.onClose} aria-label={`Close ${names[tool]} settings`}><Check size={15}/>Done</button></div>
-    {tool==='canvas'&&<><p className="panel-intro">A frame for wherever it’s going.</p><div className="canvas-presets">{[{name:'Original',ratio:null,label:'Original'},{name:'16:9',ratio:16/9,label:'Landscape'},{name:'9:16',ratio:9/16,label:'Portrait'},{name:'1:1',ratio:1,label:'Square'},{name:'4:5',ratio:4/5,label:'Social'},{name:'4:3',ratio:4/3,label:'Classic'},{name:'21:9',ratio:21/9,label:'Wide'},{name:'Custom',ratio:Math.max(.2,Math.min(5,custom.width/custom.height)),label:'Custom'}].map(item=><button key={item.name} aria-pressed={edits.canvas.aspect===item.name} onClick={()=>onUpdate({canvas:{...edits.canvas,aspect:item.name,ratio:item.ratio},resolution:'original'})}><span className="ratio-icon" style={{aspectRatio:item.ratio||source.width/source.height,width:!item.ratio||item.ratio>=1?'25px':'16px'}}/><span>{item.label}</span><small>{item.name==='Original'?'auto':item.name==='Custom'?'W : H':item.name}</small></button>)}</div>
-      {edits.canvas.aspect==='Custom'&&<div className="custom-ratio">{(['width','height'] as const).map(key=><label key={key}>{key==='width'?'Width':'Height'}<input type="number" aria-label={`Canvas ratio ${key}`} min="1" max="8192" value={custom[key]} onChange={e=>{const next={...custom,[key]:Math.max(1,Math.min(8192,Number(e.target.value)||1))};const ratio=next.width/next.height;onUpdate({canvas:{...edits.canvas,customWidth:next.width,customHeight:next.height,...(ratio>=.2&&ratio<=5?{ratio}:{})},resolution:'original'});}}/></label>)}<span>Ratio from 1:5 to 5:1</span></div>}
-      <div className="property-section"><span className="property-label">Video in frame</span><div className="segmented-control">{(['fit','fill'] as const).map(fit=><button key={fit} aria-pressed={edits.canvas.fit===fit} onClick={()=>onUpdate({canvas:{...edits.canvas,fit}})}>{fit==='fit'?'Fit whole video':'Fill frame'}</button>)}</div></div>
-      {edits.canvas.fit==='fit'&&<div className="property-section">{slider('Inset',edits.canvas.inset,0,20,inset=>onUpdate({canvas:{...edits.canvas,inset}},false),'%')}<span className="property-label">Background</span><div className="color-options">{['#171717','#ffffff','#e5e5e5','#c4d4df'].map(color=><button key={color} aria-label={`Background ${color}`} aria-pressed={edits.canvas.background===color} style={{background:color}} onClick={()=>onUpdate({canvas:{...edits.canvas,background:color}})}/>)}<label className="custom-color" title="Custom background color"><input type="color" aria-label="Custom background color" value={edits.canvas.background} onChange={e=>onUpdate({canvas:{...edits.canvas,background:e.target.value}})}/><span>+</span></label></div>{!backgroundVisible&&<p className="background-note">Add an inset or change the frame ratio to reveal the background.</p>}</div>}
-      <label className="property-section field-label">Resolution<select aria-label="Edit resolution" value={edits.resolution} onChange={e=>onUpdate({resolution:e.target.value})}><option value="original">Original</option>{[2160,1440,1080,720,480,360].filter(n=>n<Math.min(canvas.width,canvas.height)).map(n=><option key={n} value={n}>{n}p</option>)}</select></label><span className="dimension-note">{output.width} × {output.height} px</span></>}
-    {tool==='crop'&&<><p className="panel-intro">Bring the details into focus.</p><span className="property-label">Crop ratio</span><div className="crop-ratios">{['Free','Original','1:1','16:9','9:16','4:3'].map(a=><button key={a} aria-pressed={edits.cropAspect===a} onClick={()=>chooseCrop(a)}>{a}</button>)}</div><div className="property-section crop-dimensions"><span>Selection</span><strong>{pixels.width} × {pixels.height}</strong></div><p className="panel-note">Drag the corners to resize. Drag inside to reposition.</p><button className="text-button" onClick={()=>onUpdate({crop:{...fullCrop},cropAspect:'Free'})}>Reset crop</button></>}
-    {tool==='filters'&&<><p className="panel-intro">A little change of mood.</p><div className="filter-options">{filters.map(filter=><button key={filter} aria-pressed={edits.filter===filter} onClick={()=>onUpdate({filter})}><span>{p.thumbnail?<img src={p.thumbnail} alt="" style={{filter:filterCSS[filter]}}/>:<i className="filter-placeholder" style={{filter:filterCSS[filter]}}/>}{edits.filter===filter&&<i className="filter-check"><Check size={12}/></i>}</span>{filter}</button>)}</div><div className="property-section">{slider('Intensity',edits.intensity,0,100,intensity=>onUpdate({intensity},false),'%')}{slider('Brightness',edits.brightness,-30,30,brightness=>onUpdate({brightness},false))}{slider('Contrast',edits.contrast,-30,30,contrast=>onUpdate({contrast},false))}</div><button className="text-button" onClick={()=>onUpdate({filter:'Original',intensity:100,brightness:0,contrast:0})}>Reset filters</button></>}
-    {tool==='annotate'&&<><p className="panel-intro">Point out what matters.</p><div className="annotation-tools"><button aria-label="Select annotations" aria-pressed={p.drawMode==='select'} onClick={()=>p.onDrawMode('select')}><MousePointer2 size={17}/></button><button aria-label="Add text" onClick={addText}><Type size={17}/></button>{([{mode:'arrow',icon:ArrowUpRight,label:'Draw arrow'},{mode:'rectangle',icon:RectangleHorizontal,label:'Draw rectangle'},{mode:'pen',icon:PenLine,label:'Draw freehand'}] as const).map(({mode,icon:Icon,label})=><button key={mode} aria-label={label} aria-pressed={p.drawMode===mode} onClick={()=>{p.onDrawMode(mode);p.onAnnotation(null);}}><Icon size={17}/></button>)}</div><div className="property-section"><span className="property-label">Color</span><div className="color-options">{colors.map(color=><button key={color} aria-label={`Annotation color ${color}`} aria-pressed={(annotation?.color||p.drawColor)===color} style={{background:color}} onClick={()=>{p.onDrawColor(color);editAnnotation({color});}}/>)}</div></div>
-      {annotation?.type==='text'&&<label className="field-label property-section">Text<textarea aria-label="Annotation text" value={annotation.text} rows={3} maxLength={200} onFocus={p.onCheckpoint} onChange={e=>editAnnotation({text:e.target.value},false)}/></label>}
-      {annotation&&<div className="property-section">{slider(annotation.type==='text'?'Text size':'Stroke width',Math.round(annotation.size*1000),annotation.type==='text'?20:2,annotation.type==='text'?160:20,v=>editAnnotation({size:v/1000},false))}</div>}
-      {edits.annotations.length>0&&<div className="property-section"><span className="property-label">On your video <small>{edits.annotations.length}</small></span><div className="annotation-list">{edits.annotations.map((a,i)=><button key={a.id} className={p.selectedAnnotation===a.id?'active':''} onClick={()=>{p.onAnnotation(a.id);p.onDrawMode('select');}}><span style={{background:a.color}}/><span>{a.type==='text'?a.text||'Empty text':`${a.type==='pen'?'Drawing':a.type[0].toUpperCase()+a.type.slice(1)} ${i+1}`}</span></button>)}</div></div>}
-      {annotation&&<button className="text-button danger" onClick={()=>{onUpdate({annotations:edits.annotations.filter(a=>a.id!==annotation.id)});p.onAnnotation(null);}}><Trash2 size={13}/>Delete annotation</button>}<p className="panel-note">Annotations stay visible throughout the video. Select one to move or edit it.</p></>}
-    {tool==='speed'&&<><p className="panel-intro">Set your own pace.</p><div className="speed-presets">{[.25,.5,.75,1,1.25,1.5,2,3,4].map(speed=><button key={speed} aria-pressed={edits.speed===speed} onClick={()=>onUpdate({speed})}>{speed}×</button>)}</div><p className="panel-note">Applies to every clip. Audio follows along and keeps its pitch.</p><label className="mute-setting"><span>Keep audio</span><input type="checkbox" role="switch" aria-label="Keep audio" checked={!edits.muted} onChange={e=>onUpdate({muted:!e.target.checked})}/></label></>}
+  return <aside id="tool-settings" hidden={p.hidden} className="inspector flex flex-col gap-6" aria-label={`${names[tool]} settings`}>
+    <div><div className="flex w-full items-center justify-between"><h2 className="text-base font-semibold">{names[tool]}</h2><Button className="min-[901px]:hidden" size="sm" variant="ghost" onClick={p.onClose} aria-label={`Close ${names[tool]} settings`}><Check />Done</Button></div><p className="mt-1 text-sm text-muted-foreground">{intros[tool]}</p></div>
+    {tool === 'canvas' && <>
+      <Field><FieldLabel>Aspect ratio</FieldLabel><EditorSelect label="Canvas aspect ratio" value={edits.canvas.aspect} options={presets.map(item => ({ value: item.name, label: `${item.label}${item.ratio ? ` · ${item.name}` : ''}` }))} onChange={aspect => { const preset = presets.find(item => item.name === aspect)!; onUpdate({ canvas: { ...edits.canvas, aspect, ratio: aspect === 'Custom' ? Math.max(.2,Math.min(5,custom.width/custom.height)) : preset.ratio }, resolution: 'original' }); }} /></Field>
+      {edits.canvas.aspect === 'Custom' && <div className="grid grid-cols-2 gap-3">{(['width','height'] as const).map(key => <Field key={key}><FieldLabel>{key === 'width' ? 'Width' : 'Height'}</FieldLabel><Input aria-labelledby="" type="number" aria-label={`Canvas ratio ${key}`} min={1} max={8192} value={custom[key]} onChange={e => { const next = { ...custom, [key]: Math.max(1,Math.min(8192,Number(e.target.value)||1)) }, ratio = next.width/next.height; onUpdate({ canvas: { ...edits.canvas, customWidth: next.width, customHeight: next.height, ...(ratio >= .2 && ratio <= 5 ? { ratio } : {}) }, resolution: 'original' }); }} /></Field>)}<p className="col-span-2 text-xs text-muted-foreground">Ratio from 1:5 to 5:1</p></div>}
+      <Field><FieldLabel>Video in frame</FieldLabel><Tabs className="w-full" value={edits.canvas.fit} onValueChange={fit => onUpdate({ canvas: { ...edits.canvas, fit: fit as 'fit' | 'fill' } })}><TabsList className="w-full"><TabsTab value="fit">Fit whole video</TabsTab><TabsTab value="fill">Fill frame</TabsTab></TabsList></Tabs></Field>
+      <Separator />
+      {edits.canvas.fit === 'fit' && <>
+        <PropertySlider label="Inset" value={edits.canvas.inset} min={0} max={20} suffix="%" onCheckpoint={p.onCheckpoint} onChange={inset => onUpdate({ canvas: { ...edits.canvas, inset } },false)} />
+        <Field><FieldLabel>Background</FieldLabel><div className="flex items-center gap-2">{['#171717','#ffffff','#e5e5e5','#c4d4df'].map(color => <Button key={color} size="icon" variant={edits.canvas.background === color ? 'secondary' : 'outline'} aria-label={`Background ${color}`} aria-pressed={edits.canvas.background === color} onClick={() => onUpdate({ canvas: { ...edits.canvas, background: color } })}><span className="size-4 rounded-sm border border-black/15" style={{ background: color }} /></Button>)}<Input aria-labelledby="" type="color" aria-label="Custom background color" value={edits.canvas.background} className="w-12 p-1" onChange={e => onUpdate({ canvas: { ...edits.canvas, background: e.target.value } })} /></div>{!backgroundVisible && <FieldDescription>Add an inset or change the ratio to reveal the background.</FieldDescription>}</Field>
+        <Separator />
+      </>}
+      <Field><FieldLabel>Resolution</FieldLabel><EditorSelect label="Edit resolution" value={edits.resolution} options={[{ value: 'original', label: 'Original resolution' }, ...[2160,1440,1080,720,480,360].filter(n => n < Math.min(canvas.width,canvas.height)).map(n => ({ value: String(n), label: `${n}p` }))]} onChange={resolution => onUpdate({ resolution })} /><FieldDescription>{output.width} × {output.height} px</FieldDescription></Field>
+    </>}
+    {tool === 'crop' && <>
+      <Field><FieldLabel>Crop ratio</FieldLabel><EditorSelect label="Crop ratio" value={edits.cropAspect} options={['Free','Original','1:1','16:9','9:16','4:3'].map(value => ({ value, label: value }))} onChange={chooseCrop} /></Field>
+      <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Selection</span><Badge variant="outline">{pixels.width} × {pixels.height}</Badge></div>
+      <Separator /><p className="text-sm leading-relaxed text-muted-foreground">Drag the corners to resize. Drag inside the selection to reposition it.</p>
+      <Button variant="outline" onClick={() => onUpdate({ crop: { ...fullCrop }, cropAspect: 'Free' })}><RotateCcw />Reset crop</Button>
+    </>}
+    {tool === 'filters' && <>
+      <div className="filter-options grid grid-cols-2 gap-3">{filters.map(filter => <div key={filter} className="flex flex-col gap-2">{p.thumbnail && <img src={p.thumbnail} alt="" className="aspect-video w-full rounded-lg object-cover" style={{ filter: filterCSS[filter] }} />}<Button variant={edits.filter === filter ? 'secondary' : 'outline'} aria-pressed={edits.filter === filter} onClick={() => onUpdate({ filter })}>{edits.filter === filter && <Check />}{filter}</Button></div>)}</div>
+      <Separator />
+      <PropertySlider label="Intensity" value={edits.intensity} min={0} max={100} suffix="%" onCheckpoint={p.onCheckpoint} onChange={intensity => onUpdate({ intensity },false)} />
+      <PropertySlider label="Brightness" value={edits.brightness} min={-30} max={30} onCheckpoint={p.onCheckpoint} onChange={brightness => onUpdate({ brightness },false)} />
+      <PropertySlider label="Contrast" value={edits.contrast} min={-30} max={30} onCheckpoint={p.onCheckpoint} onChange={contrast => onUpdate({ contrast },false)} />
+      <Button variant="outline" onClick={() => onUpdate({ filter: 'Original', intensity: 100, brightness: 0, contrast: 0 })}><RotateCcw />Reset filters</Button>
+    </>}
+    {tool === 'annotate' && <>
+      <div className="flex items-center justify-between gap-2"><ToggleGroup aria-label="Annotation tools" value={[p.drawMode]} onValueChange={values => { if (values[0]) { p.onDrawMode(values[0] as DrawMode); if (values[0] !== 'select') p.onAnnotation(null); } }} variant="outline"><ToggleGroupItem value="select" aria-label="Select annotations"><MousePointer2 /></ToggleGroupItem>{([{ mode: 'arrow', icon: ArrowUpRight, label: 'Draw arrow' }, { mode: 'rectangle', icon: RectangleHorizontal, label: 'Draw rectangle' }, { mode: 'pen', icon: PenLine, label: 'Draw freehand' }] as const).map(({ mode, icon: Icon, label }) => <ToggleGroupItem key={mode} value={mode} aria-label={label}><Icon /></ToggleGroupItem>)}</ToggleGroup><Button size="icon" variant="outline" aria-label="Add text" onClick={addText}><Type /></Button></div>
+      <Field><FieldLabel>Color</FieldLabel><div className="flex flex-wrap gap-2">{['#ffffff','#1a1d18','#e8e76a','#f599a7','#9bc772','#8eb8fa'].map(color => <Button key={color} size="icon-sm" variant={(annotation?.color||p.drawColor) === color ? 'secondary' : 'outline'} aria-label={`Annotation color ${color}`} aria-pressed={(annotation?.color||p.drawColor) === color} onClick={() => { p.onDrawColor(color); editAnnotation({ color }); }}><span className="size-4 rounded-sm border border-black/15" style={{ background: color }} /></Button>)}</div></Field>
+      {annotation?.type === 'text' && <Field><FieldLabel>Text</FieldLabel><Textarea aria-labelledby="" aria-label="Annotation text" value={annotation.text} rows={3} maxLength={200} onFocus={p.onCheckpoint} onChange={e => editAnnotation({ text: e.target.value },false)} /></Field>}
+      {annotation && <PropertySlider label={annotation.type === 'text' ? 'Text size' : 'Stroke width'} value={Math.round(annotation.size*1000)} min={annotation.type === 'text' ? 20 : 2} max={annotation.type === 'text' ? 160 : 20} onCheckpoint={p.onCheckpoint} onChange={v => editAnnotation({ size: v/1000 },false)} />}
+      <Separator />
+      {edits.annotations.length ? <div className="flex flex-col gap-3"><div className="flex items-center justify-between text-sm font-medium">On your video<Badge variant="secondary">{edits.annotations.length}</Badge></div><div className="annotation-list flex flex-col gap-1">{edits.annotations.map((a,i) => <Button key={a.id} variant={p.selectedAnnotation === a.id ? 'secondary' : 'ghost'} className="justify-start" onClick={() => { p.onAnnotation(a.id); p.onDrawMode('select'); }}><span className="size-2 shrink-0 rounded-full border" style={{ background: a.color }} /><span className="truncate">{a.type === 'text' ? a.text || 'Empty text' : `${a.type === 'pen' ? 'Drawing' : a.type[0].toUpperCase()+a.type.slice(1)} ${i+1}`}</span></Button>)}</div></div> : <Empty className="px-0 py-4 md:py-4"><EmptyHeader><EmptyMedia variant="icon"><PenLine /></EmptyMedia><EmptyTitle>No annotations yet</EmptyTitle><EmptyDescription>Add text or draw on the preview.</EmptyDescription></EmptyHeader></Empty>}
+      {annotation && <Button variant="destructive-outline" onClick={() => { onUpdate({ annotations: edits.annotations.filter(a => a.id !== annotation.id) }); p.onAnnotation(null); }}><Trash2 />Delete annotation</Button>}
+      <p className="text-xs leading-relaxed text-muted-foreground">Annotations stay visible throughout the video. Select one to move or edit it.</p>
+    </>}
+    {tool === 'speed' && <>
+      <Field><FieldLabel>Playback speed</FieldLabel><EditorSelect label="Video speed" value={String(edits.speed)} options={[.25,.5,.75,1,1.25,1.5,2,3,4].map(speed => ({ value: String(speed), label: `${speed}×${speed === 1 ? ' · Normal' : ''}` }))} onChange={value => onUpdate({ speed: Number(value) })} /><FieldDescription>Applies to every clip. Audio follows along and keeps its pitch.</FieldDescription></Field>
+      <Separator /><Field><div className="flex w-full items-center justify-between"><FieldLabel>Keep audio</FieldLabel><Switch aria-label="Keep audio" checked={!edits.muted} onCheckedChange={checked => onUpdate({ muted: !checked })} /></div><FieldDescription>Include the original sound in your export.</FieldDescription></Field>
+    </>}
   </aside>;
 }

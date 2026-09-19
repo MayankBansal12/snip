@@ -1,0 +1,72 @@
+[
+  {
+    "check": "Ctrl O opens a local video from the empty state"
+  },
+  {
+    "check": "Start/end, one-second jumps, and fine playhead nudges"
+  },
+  {
+    "check": "Split, repeat-key protection, cut navigation, deletion, undo and both redo shortcuts"
+  },
+  {
+    "check": "Trim either side of a clip at the playhead and undo"
+  },
+  {
+    "check": "Mute, speed, zoom, and K playback; focused buttons retain native Space behavior"
+  },
+  {
+    "check": "Tool shortcuts and text-input protection"
+  },
+  {
+    "check": "Shortcut help and export dialog open by keyboard, trap focus, and close safely"
+  },
+  {
+    "check": "Preview fullscreen toggle"
+  },
+  {
+    "check": "Compact overview, mobile undo/redo, and accessible project menu"
+  },
+  {
+    "check": "Frame tools open next to their navigation and keep the preview visible while scrolling"
+  },
+  {
+    "check": "Touch split, undo/redo, and edge trimming with one-step undo"
+  },
+  {
+    "check": "A swipe pans the zoomed timeline without moving the playhead"
+  },
+  {
+    "check": "Responsive editor and reachable export",
+    "viewport": {
+      "width": 320,
+      "height": 640
+    }
+  },
+  {
+    "check": "Responsive editor and reachable export",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  {
+    "check": "Responsive editor and reachable export",
+    "viewport": {
+      "width": 768,
+      "height": 1024
+    }
+  },
+  {
+    "check": "Responsive editor and reachable export",
+    "viewport": {
+      "width": 844,
+      "height": 390
+    }
+  },
+  {
+    "check": "Mobile new-video and clear-project flows remain reachable"
+  },
+  {
+    "check": "No browser errors"
+  }
+]
