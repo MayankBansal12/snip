@@ -1,6 +1,8 @@
 # Third-party software
 
 - React and React DOM — MIT.
+- coss UI — MIT. Official registry sources copied into `src/components/ui` with their original styles; [license](public/licenses/coss-MIT.txt). Source: https://github.com/cosscom/coss
+- Base UI, Tailwind CSS, class-variance-authority, clsx, tailwind-merge, and tw-animate-css — MIT.
 - Lucide icons — ISC.
 - Inter variable font — SIL Open Font License 1.1. Bundled locally via @fontsource-variable/inter; [license](public/licenses/Inter-OFL.txt).
 - @ffmpeg/ffmpeg — MIT; https://github.com/ffmpegwasm/ffmpeg.wasm

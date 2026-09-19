@@ -15,9 +15,10 @@ export function useEditorShortcuts(actions: ShortcutActions) {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       const a = latest.current, target = event.target instanceof Element ? event.target : null;
-      if (event.defaultPrevented || event.isComposing || event.altKey || a.blocked || document.querySelector('dialog[open]')) return;
-      // Text editing and native selects keep their own shortcuts and undo history.
-      if (target?.closest('textarea,select,input:not([type=range]):not([type=checkbox]):not([type=radio]),[contenteditable]:not([contenteditable="false"])')) return;
+      if (event.defaultPrevented || event.isComposing || event.altKey || a.blocked || Array.from(document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[role=menu],[role=listbox]')).some(element => element.getClientRects().length > 0)) return;
+      // Base UI keeps closed select lists mounted; only visible popups suspend editor shortcuts.
+      // Text editing and form controls keep their own shortcuts and undo history.
+      if (target?.closest('textarea,select,input:not([type=range]):not([type=checkbox]):not([type=radio]),[role=combobox],[role=spinbutton],[contenteditable]:not([contenteditable="false"])')) return;
       const key = event.key.toLowerCase(), mod = event.ctrlKey || event.metaKey;
       let run: (() => void) | undefined;
       if (mod) {
