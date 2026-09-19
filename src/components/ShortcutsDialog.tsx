@@ -14,7 +14,7 @@ const groups = [
   ] },
   { title: 'Workspace', items: [
     ['Frame · Crop · Filters · Annotate · Speed', '1–5'], ['Open a video', mod, 'O'], ['Export settings', mod, 'E'],
-    ['Keyboard shortcuts', '?'], ['Close panel / deselect', 'Esc'],
+    ['Save project', mod, 'S'], ['Open project', mod, 'Shift', 'O'], ['Keyboard shortcuts', '?'], ['Close panel / deselect', 'Esc'],
   ] },
 ];
 export default function ShortcutsDialog({open,onClose}:{open:boolean;onClose:()=>void}) {

@@ -28,11 +28,23 @@ Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analyt
 - **Annotate:** text, arrows, rectangles, and freehand drawing. Change color and text/stroke size, select and drag to reposition, or delete. Annotations are visible for the entire sequence and are rendered into the export.
 - **Playback:** jump to the start or end, play/pause, seek, adjust speed, and toggle audio beside the preview.
 - **Speed:** 0.25×–4×, with pitch-preserving audio. The playback selector and Speed panel control the same edit; both speed and mute apply to export.
-- **Small screens:** preview and timeline first, collapsible tools, and a preview that stays visible while changing settings. Larger trim handles, native swipe-to-scroll for a zoomed timeline, mobile undo/redo, a side-by-side layout on rotated phones, and a project menu for opening or clearing videos.
+- **Small screens:** preview and timeline first, collapsible tools, and a preview that stays visible while changing settings. Larger trim handles, native swipe-to-scroll for a zoomed timeline, mobile undo/redo, a side-by-side layout on rotated phones, and a project menu for saving/opening projects, opening videos, or clearing the workspace.
 - **Keyboard:** press `?` for the shortcut reference, or use the keyboard button. Typing, native form controls, and modal dialogs retain their own behavior.
 - **Theme:** flat neutral light/dark surfaces with restrained amber accents (`#f0b100`) and locally bundled Inter. The choice initially follows the system preference and persists locally.
 
 The source video and all edit settings are stored in IndexedDB on this browser and origin. Refresh restores the project; saved projects from the original version migrate without re-uploading. “New video” replaces the current project. The trash button clears the saved project. Browser storage clearing, private browsing, or storage eviction can remove saved work.
+
+## Project files
+
+Choose **Project → Save project** (the **…** menu on mobile), or press **Mod S**, to download a `.snip` file to your device. It contains the original video and every edit: clips and trims, crop, frame/background, filters, all annotation types, speed/audio, and export settings. The video is not re-encoded or converted to base64; the file is roughly the source video’s size plus a small manifest.
+
+Use **Open project** on the start screen or in the Project menu, press **Mod Shift O**, or drop a `.snip` file into the editor. The video is embedded, so the original video file is not needed separately. Opening a project replaces the current browser workspace after validation and a successful local save. Invalid, unsupported, and incomplete files leave the existing workspace intact. Imported projects autosave and restore after refresh like ordinary videos.
+
+Project files are snapshots. Later edits continue to autosave in this browser; choose **Save project** again for an updated download. Saving does not overwrite a previously downloaded file automatically. Undo history, playhead position, and device-specific UI preferences are not included. `.snip` files are for reopening in snip; use **Export video** for a playable MP4 or WebM.
+
+Once the production app’s offline cache has finished installing, project open/save, editing, refresh recovery, and video export work without a network connection. A new device still needs an initial online visit. Browser storage can be cleared or evicted; downloaded project files remain in the folder where you saved them.
+
+The embedded source retains the existing 500 MB input limit. It includes footage removed from the timeline. See [the versioned file format](docs/project-format.md) for implementation details.
 
 ## Export
 
@@ -61,6 +73,7 @@ Press **?** to open the reference. `Mod` means ⌘ on Mac or Ctrl on Windows/Lin
 | Frame / Crop / Filters / Annotate / Speed | 1 / 2 / 3 / 4 / 5 |
 | Expand preview | F |
 | Open a video / export settings | Mod O / Mod E |
+| Save project / open project | Mod S / Mod Shift O |
 | Close mobile settings or deselect annotation | Escape |
 
 Text fields and selects keep their native keyboard behavior. Space activates a focused button; K remains available for playback. Editing shortcuts are suspended inside dialogs and during export. Holding a destructive key does not repeatedly modify the project. I/O trimming always preserves at least 0.1 seconds of the clip.
@@ -93,3 +106,14 @@ VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 node scripts/verify-touch-lay
 It checks 320px, 390px, 768px, and 844px layouts, including phone landscape, input/dialog focus protection, mobile project actions, and shortcuts for editing.
 
 The automated suites use separate browser contexts. Native FFmpeg/FFprobe are only test tools for generating input and inspecting downloads; the app itself runs entirely in the browser.
+
+Project portability and failure recovery are checked with:
+
+```sh
+VIDEO_SAMPLE=/path/to/8-second-720p-with-audio.mp4 \
+FFPROBE_PATH=/path/to/ffprobe \
+APP_URL=http://127.0.0.1:5187 \
+node scripts/verify-projects.mjs
+```
+
+This suite compares the embedded source bytes and all edits, reopens in a fresh browser context offline, refreshes, exports/downloads MP4, tests invalid imports and failed storage writes, and verifies the project controls on small screens.

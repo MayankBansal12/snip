@@ -8,7 +8,7 @@ export type ShortcutActions = {
   trim: (edge: 'start' | 'end') => void; undo: () => void; redo: () => void;
   mute: () => void; speed: (direction: number) => void; zoom: (direction: number) => void;
   tool: (tool: Tool) => void; expand: () => void; open: () => void; export: () => void;
-  help: () => void; escape: () => void;
+  openProject: () => void; saveProject: () => void; help: () => void; escape: () => void;
 };
 export function useEditorShortcuts(actions: ShortcutActions) {
   const latest = useRef(actions); latest.current = actions;
@@ -21,8 +21,9 @@ export function useEditorShortcuts(actions: ShortcutActions) {
       const key = event.key.toLowerCase(), mod = event.ctrlKey || event.metaKey;
       let run: (() => void) | undefined;
       if (mod) {
-        if (key === 'o' && !event.shiftKey) run = a.open;
+        if (key === 'o') run = event.shiftKey ? a.openProject : a.open;
         if (a.hasVideo) {
+          if (key === 's' && !event.shiftKey) run = a.saveProject;
           if (key === 'e' && !event.shiftKey) run = a.export;
           if (key === 'z') run = event.shiftKey ? a.redo : a.undo;
           if (key === 'y' && !event.shiftKey) run = a.redo;

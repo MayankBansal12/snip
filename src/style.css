@@ -13,7 +13,7 @@
 
 [hidden]{display:none!important}
 .empty-theme{display:flex;gap:4px}
-.project-menu-button,.mobile-history,.close-settings,.touch-timeline-hint{display:none}
+.mobile-history,.close-settings,.touch-timeline-hint{display:none}
 .tool-rail>.shortcuts-button{margin-top:auto;min-height:36px}.tool-rail>.remove-video{margin-top:0}
 .seek{height:24px;background:transparent}.seek::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:3px}.seek::-moz-range-track{height:3px;background:var(--line);border-radius:3px}.seek::-webkit-slider-thumb{margin-top:-3px}
 .shortcuts-dialog,.project-dialog{padding:24px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text);box-shadow:0 20px 80px #0003;width:600px;max-width:calc(100% - 24px);max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
@@ -21,6 +21,8 @@
 .shortcut-groups{display:grid;grid-template-columns:1fr 1fr;gap:20px 24px}.shortcut-groups section:last-child{grid-column:1/-1}.shortcut-groups h3{font-size:11px;font-weight:500;color:var(--muted);margin:0 0 9px}.shortcut-groups dl{margin:0}.shortcut-groups dl>div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.shortcut-groups dt{font-size:11px;line-height:1.5}.shortcut-groups dd{margin:0;display:flex;gap:4px;flex-shrink:0}.shortcut-groups kbd{font-family:inherit;font-size:10px;color:var(--text);padding:3px 5px;background:var(--surface-soft)}.shortcut-note{font-size:11px;line-height:1.7;color:var(--muted);margin:20px 0 0}
 .project-dialog{width:340px}.project-actions{display:flex;flex-direction:column;gap:4px;margin-top:18px}.project-actions button{display:flex;align-items:center;gap:12px;background:transparent;border-radius:7px;min-height:48px;padding:10px 8px;font-size:14px;text-align:left}.project-actions button:hover{background:var(--surface-soft)}
 @media(max-width:540px){.shortcuts-dialog{padding:20px}.shortcut-groups{grid-template-columns:1fr;gap:20px}.shortcut-groups dt{font-size:12px}.shortcut-groups dl>div{min-height:38px}.shortcut-groups kbd{font-size:11px}.shortcut-note{font-size:12px}}
+.project-menu-button{display:inline-flex;min-height:36px;border-radius:6px;padding:8px}.project-ellipsis{display:none}.open-project{min-height:44px;padding:8px 12px;margin-top:10px;font-size:12px;border-radius:6px}.open-project+.privacy-line{margin-top:12px}.project-note{color:var(--muted);font-size:12px;line-height:1.6;margin:10px 0 0}.project-extension{margin-left:auto;font-size:11px;color:var(--faint)}.project-separator{height:1px;background:var(--line);margin:8px 0}
+@media(hover:hover) and (pointer:fine){.open-project:hover,.project-menu-button:hover{background:var(--surface-soft);color:var(--text)}}
 @media(max-width:1100px){.app{padding:22px 22px 12px}.workspace{grid-template-columns:64px 205px minmax(0,1fr)}.tool-rail{padding:12px 5px}.tool-rail>button{width:51px}.inspector{padding:20px 15px}.header-actions{gap:11px}.preview-stage{padding:2px 20px 20px}.file-info>span{max-width:250px}.player{gap:10px;padding:0 12px}.timeline{padding:12px 15px 14px}}
 /* Compact editor: preview and timeline first, settings directly below their tools. */
 @media(max-width:900px){
@@ -29,7 +31,7 @@
   .wordmark.small{font-size:32px;letter-spacing:-2px;gap:8px}.header-mark{width:27px;height:27px}
   .header-actions{grid-column:2;grid-row:1;gap:6px;margin-left:auto}.header-actions .history-actions,.header-actions .theme-button,.header-divider,.new-video{display:none}
   .header-actions .primary-button{min-height:44px;padding:11px 14px;font-size:12px;gap:7px}.header-actions .primary-button>span{font-size:0}.header-actions .primary-button>span:after{content:'Export';font-size:12px}
-  .project-menu-button{display:inline-flex;width:44px;height:44px}
+  .project-menu-button{display:inline-flex;width:44px;height:44px;padding:0;order:2}.project-menu-button .project-folder,.project-menu-button>span{display:none}.project-menu-button .project-ellipsis{display:block}
   .file-info{grid-row:2;grid-column:1/-1;border:0;padding:0;flex-direction:row;gap:12px;align-items:center;justify-content:space-between;min-width:0}
   .file-info>span{font-size:12px;max-width:none;min-width:0;flex:1}.file-info small{font-size:10px;gap:6px;flex-shrink:0;white-space:nowrap}
   .workspace{--preview-height:clamp(250px,42svh,400px);grid-template-columns:minmax(0,1fr);grid-template-rows:var(--preview-height) auto auto auto;overflow:visible;border-radius:12px;box-shadow:none}
