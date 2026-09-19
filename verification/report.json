@@ -22,7 +22,7 @@
   },
   {
     "check": "Automatic multi-clip MP4 download",
-    "file": "/tmp/cut-validation/refinement-results/trimmed-sequence.mp4",
+    "file": "/tmp/cut-validation/keyboard-mobile-export-results/trimmed-sequence.mp4",
     "seconds": "5.000000",
     "dimensions": [
       640,
@@ -45,13 +45,13 @@
     "check": "Offline refresh restores clips, portrait frame, annotations, dark mode, and Inter"
   },
   {
-    "check": "Offline portrait MP4: cuts, 2\u00d7 speed, filter, all annotations",
-    "file": "/tmp/cut-validation/refinement-results/portrait-effects.mp4",
+    "check": "Offline portrait MP4: cuts, 2× speed, filter, all annotations",
+    "file": "/tmp/cut-validation/keyboard-mobile-export-results/portrait-effects.mp4",
     "seconds": "2.500000"
   },
   {
     "check": "Offline WebM with the same edits",
-    "file": "/tmp/cut-validation/refinement-results/portrait-effects.webm"
+    "file": "/tmp/cut-validation/keyboard-mobile-export-results/portrait-effects.webm"
   },
   {
     "check": "Light and dark mobile layouts fit 390px"
@@ -64,12 +64,5 @@
   },
   {
     "check": "No cookies, uploads, external requests, or browser errors"
-  },
-  {
-    "check": "Agent Browser final-build end/speed regression",
-    "sourceTime": 8,
-    "speed": 2,
-    "playhead": 4,
-    "duration": 4
   }
 ]
