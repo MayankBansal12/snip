@@ -1,0 +1,39 @@
+[
+  {
+    "check": "Minimal editor shows preview and timeline without an inspector, tool tabs, or redundant labels"
+  },
+  {
+    "check": "Double-click and keyboard actions change only the chosen clip; speed, zoom and focal position affect the preview"
+  },
+  {
+    "check": "Playback changes speed and zoom at clip boundaries without applying them to neighboring clips"
+  },
+  {
+    "check": "Splitting preserves clip adjustments; merging matching pieces is reversible"
+  },
+  {
+    "check": "Mouse and keyboard trimming preview the retained edge frame and respect clip speed; a drag is one undo step"
+  },
+  {
+    "check": "Deleting a clip closes the gap; merge cannot restore removed footage; undo restores the edit"
+  },
+  {
+    "check": "Project v2 preserves clip adjustments and original video bytes in a fresh offline workspace and after refresh"
+  },
+  {
+    "check": "Offline MP4 and WebM exports have correct mixed-speed duration, audio, dimensions and per-clip zoom pixels",
+    "seconds": "8.000000"
+  },
+  {
+    "check": "Editor and clip actions fit 320px, 390px, tablet and phone landscape in light and dark themes"
+  },
+  {
+    "check": "Touch users can open clip actions and swipe a zoomed timeline without accidentally trimming"
+  },
+  {
+    "check": "Deleting the final clip confirms before clearing the project; cancel preserves it"
+  },
+  {
+    "check": "No browser errors, cookies, external requests or uploads"
+  }
+]

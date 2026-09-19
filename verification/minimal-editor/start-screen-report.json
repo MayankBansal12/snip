@@ -1,0 +1,26 @@
+[
+  {
+    "check": "Minimal start screen has only theme, upload, and open-project controls; theme persists"
+  },
+  {
+    "check": "Start screen and upload target fit phones and landscape without horizontal overflow"
+  },
+  {
+    "check": "Text paste is left alone; unsupported and empty pasted files use existing validation"
+  },
+  {
+    "check": "Pasting a video opens the editor, saves across refresh, and cannot replace an active project"
+  },
+  {
+    "check": "Clicking the upload area opens a file picker and imports a video"
+  },
+  {
+    "check": "Dropping a video anywhere on the start screen imports it"
+  },
+  {
+    "check": "Open project remains available through its file picker"
+  },
+  {
+    "check": "No browser errors"
+  }
+]

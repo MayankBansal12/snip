@@ -36,6 +36,7 @@ async function transfer(page, type, files = [], text = '') {
     return event.defaultPrevented;
   }, { type, files, text });
 }
+async function sourceName(page) { return page.evaluate(() => new Promise(resolve => { const r = indexedDB.open('snip-local-project', 1); r.onsuccess = () => { const db = r.result, t = db.transaction('project'), get = t.objectStore('project').get('source'); get.onsuccess = () => resolve(get.result?.name); t.oncomplete = () => db.close(); }; })); }
 async function loaded(page) {
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   assert.equal(await page.getByRole('banner').count(), 1);
@@ -78,13 +79,13 @@ try {
 
   assert.equal(await transfer(page, 'paste', [{ name: 'image.png', type: 'image/png', bytes: 'eA==' }, fixture]), true);
   await loaded(page);
-  assert.equal(await page.locator('.file-info').textContent().then(text => text.includes('pasted-video.mp4')), true);
+  assert.equal((await sourceName(page)).includes('pasted-video.mp4'), true);
   assert.equal(await page.locator('video').evaluate(video => video.duration), 8);
   assert.equal(await transfer(page, 'paste', [{ name: 'replacement.mp4', type: 'video/mp4', bytes: '' }]), false);
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.reload();
   await loaded(page);
-  assert.match(await page.locator('.file-info').textContent(), /pasted-video.mp4/);
+  assert.match(await sourceName(page), /pasted-video.mp4/);
   log('Pasting a video opens the editor, saves across refresh, and cannot replace an active project');
 
   const upload = await fresh();
@@ -97,7 +98,7 @@ try {
   const drop = await fresh();
   await transfer(drop, 'drop', [{ ...fixture, name: 'dropped-video.mp4' }]);
   await loaded(drop);
-  assert.match(await drop.locator('.file-info').textContent(), /dropped-video.mp4/);
+  assert.match(await sourceName(drop), /dropped-video.mp4/);
   log('Dropping a video anywhere on the start screen imports it');
 
   const project = await fresh();
