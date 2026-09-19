@@ -137,8 +137,11 @@ try {
     const rects = [[0, 0, 640, 360], [0, 0, 320, 180], [320, 180, 320, 180], [0, 0, 640, 360]];
     const viewportAt = t => {
       const index = boundaries.findLastIndex(start => start <= t + .00001), from = rects[Math.max(0, index - 1)], to = rects[index];
-      const eased = (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, (t - boundaries[index]) / .28)))) / 2;
-      return to.map((v, i) => from[i] + (v - from[i]) * eased);
+      const progress = Math.min(1, Math.max(0, (t - boundaries[index]) / .55));
+      const eased = progress ** 3 * (progress * (progress * 6 - 15) + 10);
+      const width = from[2] * (to[2] / from[2]) ** eased, height = from[3] * (to[3] / from[3]) ** eased;
+      const center = axis => from[axis] + from[axis + 2] / 2 + (to[axis] + to[axis + 2] / 2 - from[axis] - from[axis + 2] / 2) * eased;
+      return [center(0) - width / 2, center(1) - height / 2, width, height];
     };
     for (const t of [2, 2.1, 2.2, 2.4, boundaries[2] + .13, boundaries[3] + .13, boundaries[3] + .4]) {
       const actualTime = await seek(p, t), expected = viewportAt(actualTime);

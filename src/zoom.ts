@@ -1,8 +1,9 @@
-import { clamp, clipCrop, clipDuration, clipSpeed, cropPixels } from './types';
+import { clamp, clipCrop, clipDuration, cropPixels } from './types';
 import type { Edits, Source } from './types';
 
 type Viewport = ReturnType<typeof cropPixels>;
-export const ZOOM_TRANSITION_SECONDS = .28;
+export const ZOOM_TRANSITION_SECONDS = .55;
+export const ZOOM_TRANSITION_FPS = 60;
 
 export function zoomTransition(source: Source, edits: Edits, index: number) {
   const to = cropPixels(source, clipCrop(edits, edits.clips[index]));
@@ -17,24 +18,33 @@ export function zoomViewport(source: Source, edits: Edits, index: number, elapse
   const { from, to, duration } = zoomTransition(source, edits, index);
   if (editing || !duration || elapsed >= duration) return to;
   const progress = clamp(elapsed / duration, 0, 1);
-  const eased = (1 - Math.cos(Math.PI * progress)) / 2;
+  // Zero velocity and acceleration at both ends, without overshoot.
+  const eased = progress ** 3 * (progress * (progress * 6 - 15) + 10);
   const mix = (a: number, b: number) => a + (b - a) * eased;
-  return { x: mix(from.x, to.x), y: mix(from.y, to.y), width: mix(from.width, to.width), height: mix(from.height, to.height) };
+  // Interpolate magnification proportionally and pan around the viewport center.
+  const width = from.width * (to.width / from.width) ** eased;
+  const height = from.height * (to.height / from.height) ** eased;
+  return { x: mix(from.x + from.width / 2, to.x + to.width / 2) - width / 2,
+    y: mix(from.y + from.height / 2, to.y + to.height / 2) - height / 2, width, height };
 }
 
 /** Match the preview's viewport without resizing the output canvas or overlapping clips. */
 export function zoomTransitionFilter(source: Source, edits: Edits, index: number, frameRate: number) {
   const { from, to, duration } = zoomTransition(source, edits, index);
   if (!duration) return null;
-  const frames = frameRate * clipSpeed(edits.clips[index], edits) * duration;
+  const frames = frameRate * duration;
   // FFmpeg 5.1 perspective numbers its first output frame as 1.
-  const ease = `(1-cos(PI*min(1,max(0,(on-1)/${frames}))))/2`;
+  const progress = `min(1,max(0,(on-1)/${frames}))`;
+  const ease = `(pow(${progress},3)*(${progress}*(${progress}*6-15)+10))`;
   const mix = (a: number, b: number) => a === b ? String(a) : `(${a}+(${b - a})*(${ease}))`;
-  const width = mix(from.width, to.width), height = mix(from.height, to.height);
+  const scale = (a: number, b: number) => a === b ? String(a) : `(${a}*pow(${b / a},${ease}))`;
+  const width = scale(from.width, to.width), height = scale(from.height, to.height);
+  const x = `(${mix(from.x + from.width / 2, to.x + to.width / 2)}-${width}/2)`;
+  const y = `(${mix(from.y + from.height / 2, to.y + to.height / 2)}-${height}/2)`;
   // Map the changing viewport into the final, fixed crop. Outside that crop is
   // discarded; the perspective filter can turn off once it becomes identity.
-  const left = `(${mix(from.x, to.x)}-${to.x}*${width}/${to.width})`;
-  const top = `(${mix(from.y, to.y)}-${to.y}*${height}/${to.height})`;
+  const left = `(${x}-${to.x}*${width}/${to.width})`;
+  const top = `(${y}-${to.y}*${height}/${to.height})`;
   const right = `${left}+W*${width}/${to.width}`, bottom = `${top}+H*${height}/${to.height}`;
   return `perspective=x0='${left}':y0='${top}':x1='${right}':y1='${top}':x2='${left}':y2='${bottom}':x3='${right}':y3='${bottom}':sense=source:eval=frame:interpolation=cubic:enable='lt(t,${duration})'`;
 }

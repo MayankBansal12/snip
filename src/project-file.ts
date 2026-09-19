@@ -45,13 +45,13 @@ const uniqueId = (value: unknown, seen: Set<string>) => {
 function validateEdits(value: unknown, duration: number): Edits {
   const e = record(value), crop = record(e.crop), canvas = record(e.canvas);
   if (e.version !== 2 || typeof e.muted !== 'boolean') return fail();
-  let previousEnd = 0, pointCount = 0;
+  let pointCount = 0;
   const clipIds = new Set<string>(), annotationIds = new Set<string>();
   const clips = list(e.clips, 10000).map(value => {
     const c = record(value), start = number(c.start, 0, duration);
     const end = Math.min(duration, number(c.end, 0, duration + .05));
-    if (end <= start || start < previousEnd - 1e-7) return fail();
-    previousEnd = end;
+    if (end <= start) return fail();
+
     const zoom = c.zoom === undefined ? undefined : record(c.zoom);
     return { id: uniqueId(c.id, clipIds), start, end,
       ...(c.speed === undefined ? {} : { speed: number(c.speed, .25, 4) }),
@@ -59,6 +59,8 @@ function validateEdits(value: unknown, duration: number): Edits {
 
   });
   if (!clips.length) return fail();
+  const ordered = [...clips].sort((a, b) => a.start - b.start);
+  if (ordered.some((clip, i) => i > 0 && clip.start < ordered[i - 1].end - 1e-7)) return fail();
   const annotations: Annotation[] = list(e.annotations, 1000).map(value => {
     const a = record(value), type = choice(a.type, ['text', 'arrow', 'rectangle', 'pen']);
     const points = a.points === undefined ? undefined : list(a.points, 100000).map(value => {

@@ -29,5 +29,6 @@ async function write(values: Record<string, unknown> | null) {
   });
 }
 export const saveProject = (source: Source, edits: Edits) => write({ source, edits });
+export const saveSource = (source: Source) => write({ source });
 export const saveEdits = (edits: Edits) => write({ edits });
 export const clearProject = () => write(null);

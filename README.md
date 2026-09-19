@@ -23,11 +23,11 @@ Deploy `dist/` to an HTTPS static host. No server API, accounts, cookies, analyt
 Start by choosing **Open a video**, dropping a video onto the page, or pasting a copied video file with **Mod V** when the browser provides it as a clipboard file. Pasting text leaves the page unchanged, and pasting files during editing does not replace the active project. The start screen keeps only the theme toggle in the corner.
 
 - **Timeline:** real thumbnails, a scrubbable playhead, and a compact timeline zoom menu. Split at the playhead and drag either clip edge to trim, with the preview following the edge. Preview and export skip removed footage.
-- **Clip actions:** double-click or right-click a clip, press Enter or Shift F10 on a focused clip, or select it and choose **Clip actions**. Change that clip’s speed or zoom, or delete it. Deleting the last clip asks before clearing the workspace.
-- **Speed:** presets from 0.25×–4×, including 1.75×, or choose **Custom…** and enter any speed within that range. Enter or leaving the field applies it. Audio keeps its pitch.
-- **Zoom:** choose a zoom level (1×–4×), then drag the selection over the original video frame to choose what stays in view. Click elsewhere to move the box there, or use arrow keys (Shift for larger steps; Home to center). The main preview updates immediately and output dimensions stay unchanged. Different clip zooms and positions ease into one another over 0.28 seconds in playback and export, capped at half the incoming clip’s duration. While actions are open, the preview shows the selected framing directly.
-- **Merge:** joins adjoining clips with matching speed and zoom. It never restores footage removed between them or discards different clip adjustments. The merge action appears when pieces can be joined. Splitting preserves the original piece’s adjustments.
-- **Undo/redo:** splits, merges, deletion, trims, clip adjustments, and audio/export settings. Each pointer drag is one undo step. History controls appear after the first edit and keep their positions; history lasts for the current session.
+- **Clip controls:** split, merge, speed, and zoom are visible in one row. Merge and delete the selected clip at the right. Timeline zoom sits below the timeline; reset trim and the trimmed duration appear only when footage has been removed.
+- **Speed:** presets from 0.25×–4×, including 1.75×, or choose **Custom…** and enter any speed within that range. Enter or Apply commits it; Cancel or Escape discards the draft. Invalid values show an inline error. Audio keeps its pitch.
+- **Zoom:** choose a zoom level (1×–4×), then drag the selection over the original video frame to choose what stays in view. Click elsewhere to move the box there, or use arrow keys (Shift for larger steps; Home to center). The main preview updates immediately and output dimensions stay unchanged. Different clip zooms and positions ease into one another over 0.55 seconds in playback and export, capped at half the incoming clip’s duration. Exported camera motion runs at least at 60 fps, even with low-frame-rate recordings. While actions are open, the preview shows the selected framing directly.
+- **Merge:** joins adjoining clips with matching speed and zoom. It never restores footage removed between them or discards different clip adjustments. Merge is hidden for a single clip. When pieces cannot be joined, its disabled control explains speed, zoom, zoom-position, or source-gap mismatches on hover and keyboard focus. Splitting preserves the original piece’s adjustments.
+- **Undo/redo:** splits, merges, deletion, trims, clip adjustments, and audio/export settings. Each pointer drag is one undo step. History controls stay in the timeline between merge and delete, disabled when unavailable; history lasts for the current session.
 - **Playback:** play/pause, scrub the timeline, mute audio, or expand the preview. The displayed time follows the edited sequence, including each clip’s speed. Adjoining clips continue decoding without seeking; trimmed gaps wait for their target frame, and media events keep playback moving if an animation-frame update is delayed.
 - **Small screens:** the same preview and timeline, compact actions, larger trim handles, and native horizontal scrolling on a zoomed timeline. Clip actions work with touch as well as a mouse and keyboard.
 - **Keyboard:** press `?` or use **Project menu → Keyboard shortcuts**. Typing, native form controls, and open popups retain their own behavior.
@@ -61,16 +61,22 @@ Press **?** to open the reference. `Mod` means ⌘ on Mac or Ctrl on Windows/Lin
 
 | Action | Shortcut |
 | --- | --- |
-| Play / pause | Space or K |
+| Play / pause | Space |
 | Nudge playhead by 1/30 second | ← / → |
 | Move by one second | Shift ← / → |
-| Previous / next cut | ↑ / ↓ |
+| Focus previous / next clip | ↑ / ↓ |
+| Previous / next cut | Shift ↑ / ↓ |
 | Start / end | Home / End |
 | Split at playhead | S |
 | Trim clip start / end to playhead | I / O |
 | Delete selected clip | Delete / Backspace |
 | Undo / redo | Mod Z / Mod Shift Z; Ctrl Y also redoes |
-| Mute / unmute | M |
+| Mute / unmute | K |
+| Merge compatible neighbor | M |
+| Cycle speed / zoom presets | X / Z; Shift reverses |
+| Move selected clip earlier / later | Alt ↑ / ↓ |
+| Nudge clip start / end by 0.1 seconds | Alt ← / → / Alt Shift ← / → |
+| Export with default settings | Mod Shift E |
 | Selected clip slower / faster | [ / ] |
 | Zoom timeline out / in | − / + |
 | Open focused clip actions | Enter or Shift F10 |
@@ -79,7 +85,7 @@ Press **?** to open the reference. `Mod` means ⌘ on Mac or Ctrl on Windows/Lin
 | Save project / open project | Mod S / Mod Shift O |
 | Close clip actions | Escape |
 
-Text fields and selects keep their native keyboard behavior. Space activates a focused button; K remains available for playback. Editing shortcuts are suspended inside dialogs and during export. Holding a destructive key does not repeatedly modify the project. I/O trimming always preserves at least 0.1 seconds of the clip.
+Text fields and selects keep their native keyboard behavior. Space plays or pauses when a clip is focused and activates native buttons when they are focused; K toggles sound. Editing shortcuts are suspended inside dialogs and during export. Holding a destructive key does not repeatedly modify the project. I/O trimming always preserves at least 0.1 seconds of the clip.
 
 Focus a clip edge and use left/right to trim by 0.1 seconds; Shift trims by one second. Tab through the editor to reach all controls.
 
@@ -109,3 +115,5 @@ Application controls use the official [coss registry](https://coss.com/ui/docs/g
 The browser suites use `scripts/ui.mjs` to interact with coss selects and menus by their accessible roles. All suites accept `APP_URL`, `CDP_URL`, and `VERIFY_OUTPUT`. Run them against a production preview for offline tests.
 
 Start-screen layout and file-picker, drop, and clipboard imports can be checked with `VIDEO_SAMPLE=/path/to/8-second-video.mp4 node scripts/verify-start-screen.mjs`.
+
+Run `VIDEO_SAMPLE=/path/to/video.mp4 npm run test:keyboard` against `APP_URL` (default port 5196) with a CDP browser at `CDP_URL` (default port 19384). The fixture must be at least six seconds long. This suite covers the inline toolbar, custom values, keyboard editing, reordering, project roundtrips, mobile layout, and default export.

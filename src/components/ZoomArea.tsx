@@ -51,7 +51,7 @@ export default function ZoomArea({ source, edits, clip, videoRef, onChange, onCh
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return <div className="space-y-2">
-    <div className="zoom-area" role="group" tabIndex={0} aria-label="Zoom area" aria-describedby="zoom-area-help" data-dragging={dragging} style={{ aspectRatio: source.width / source.height }}
+    <div className="zoom-area" role="group" tabIndex={0} aria-label="zoom area" aria-describedby="zoom-area-help" data-dragging={dragging} style={{ aspectRatio: source.width / source.height }}
       onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
       onKeyDown={event => {
         if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(event.key)) return;
@@ -65,6 +65,6 @@ export default function ZoomArea({ source, edits, clip, videoRef, onChange, onCh
       <canvas ref={canvas} className="size-full" aria-hidden="true" />
       <div data-zoom-selection className="zoom-selection" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }} />
     </div>
-    <p id="zoom-area-help" className="text-xs text-muted-foreground">Drag the box to choose what stays in view.<span className="sr-only"> Arrow keys move it. Shift moves faster. Home centers it.</span></p>
+    <p id="zoom-area-help" className="text-xs text-muted-foreground">drag the box to choose what stays in view.<span className="sr-only"> arrow keys move it. shift moves faster. home centers it.</span></p>
   </div>;
 }
