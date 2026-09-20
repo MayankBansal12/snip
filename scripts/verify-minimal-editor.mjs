@@ -15,7 +15,7 @@ const button=(p,name)=>p.getByRole('button',{name,exact:true});
 async function fresh(options={}){
   const c=await browser.newContext({viewport:{width:1440,height:1000},colorScheme:'dark',acceptDownloads:true,...options});contexts.push(c);
   const p=await c.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));p.on('request',r=>{if(/^http/.test(r.url()))requests.push({url:r.url(),method:r.method()});});
-  await p.goto(app);await p.waitForFunction(()=>!document.querySelector('button[aria-label="Open a video"]')?.disabled);
+  await p.goto(app);await p.waitForFunction(()=>!document.querySelector('button[aria-label="select your video"]')?.disabled);
   return p;
 }
 const loaded=p=>p.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
@@ -114,7 +114,7 @@ try{
   // Let native momentum scrolling settle before testing the next tap.
   await touch.waitForTimeout(600);p=touch;
   await button(touch,'Clip actions').tap();await button(touch,'Delete clip').tap();await touch.getByRole('alertdialog').waitFor();await button(touch,'Keep editing').tap();assert.equal(await touch.locator('.timeline-clip').count(),1);
-  await touch.getByRole('alertdialog').waitFor({state:'hidden'});await button(touch,'Clip actions').tap();await button(touch,'Delete clip').tap();await button(touch,'Clear video').tap();await button(touch,'Open a video').waitFor();assert.equal(await touch.locator('video').count(),0);
+  await touch.getByRole('alertdialog').waitFor({state:'hidden'});await button(touch,'Clip actions').tap();await button(touch,'Delete clip').tap();await button(touch,'Clear video').tap();await button(touch,'select your video').waitFor();assert.equal(await touch.locator('video').count(),0);
   log('Deleting the final clip confirms before clearing the project; cancel preserves it');
   assert.deepEqual(errors,[]);assert(requests.every(r=>r.method==='GET'&&new URL(r.url).origin===new URL(app).origin));for(const c of contexts)assert.equal((await c.cookies()).length,0);
   log('No browser errors, cookies, external requests or uploads');

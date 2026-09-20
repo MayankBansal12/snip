@@ -64,7 +64,7 @@ async function finish(clips) {
   return data;
 }
 try {
-  await page.goto(app); await button('Open a video').waitFor();
+  await page.goto(app); await button('select your video').waitFor();
   await page.locator('#video-file').setInputFiles({ name: 'sample.mp4', mimeType: 'video/mp4', buffer: readFileSync(sample) });
   await page.getByRole('status').filter({ hasText: 'Saved on this device' }).waitFor();
   base = await page.evaluate(() => new Promise(resolve => { const r = indexedDB.open('snip-local-project', 1); r.onsuccess = () => { const db = r.result, t = db.transaction('project'), e = t.objectStore('project').get('edits'); e.onsuccess = () => resolve(e.result); t.oncomplete = () => db.close(); }; }));
