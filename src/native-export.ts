@@ -2,6 +2,7 @@ import { BlobSource, BufferTarget, CanvasSource, EncodedAudioPacketSource, Encod
 import { clipDuration, clipSpeed, outputSize, placement, sequenceDuration } from './types';
 import { zoomTransition, zoomViewport, ZOOM_TRANSITION_FPS } from './zoom';
 import { drawAnnotation } from './effects';
+import { validAvcDescription } from './avc';
 import type { Source, Edits } from './types';
 
 // Color grading stays on the established FFmpeg path. Native canvas rendering
@@ -59,7 +60,17 @@ export async function nativeExport(source: Source, edits: Edits, progress: (frac
       && pos.width===size.width && pos.height===size.height && edits.crop.x===0 && edits.crop.y===0
       && !edits.annotations.length && edits.clips.every(clip=>!clip.zoom || clip.zoom.scale===1)
       && await track.getRotation()===0 && !await track.getFlip();
-    const encoding={codec:'avc' as const,quality,latencyMode:'quality' as const,hardwareAcceleration:'no-preference' as const};
+    let invalidDescription=false;
+    const checkDescription=()=>{
+      if(invalidDescription)throw new Error('Browser encoder returned an invalid H.264 configuration');
+    };
+    const encoding={codec:'avc' as const,quality,latencyMode:'quality' as const,hardwareAcceleration:'no-preference' as const,
+      onEncodedPacket:(_packet:unknown,meta:EncodedVideoChunkMetadata|undefined)=>{
+        const description=meta?.decoderConfig?.description;
+        // Do not throw from the asynchronous encoder callback: propagate the
+        // failure through the export promise so exportVideo can retry in FFmpeg.
+        if(description && !validAvcDescription(description))invalidDescription=true;
+      }};
     // Pure trims/speed changes can keep decoded YUV pixels, avoiding a needless
     // YUV → RGB → YUV round trip and its small color/rounding differences.
     const video=direct ? new VideoSampleSource(encoding) : new CanvasSource(canvas,encoding);
@@ -100,13 +111,14 @@ export async function nativeExport(source: Source, edits: Edits, progress: (frac
             if(edits.annotations.length)ctx.drawImage(overlay,0,0);
             await video.add(offset+elapsed,end-elapsed,{keyFrame:frameIndex===0});
           }
+          checkDescription();
           progress(Math.min(.98,(offset+end)/duration),'Exporting your video');
           frameIndex++;
         }finally{sample.close();}
       }
       offset+=plan.duration;
     }
-    video.close();await output.finalize();signal.throwIfAborted();
+    video.close();await output.finalize();signal.throwIfAborted();checkDescription();
     if(!target.buffer)throw new Error('The export was empty');
     progress(1,'Your video is ready');return new Blob([target.buffer],{type:'video/mp4'});
   } finally {
