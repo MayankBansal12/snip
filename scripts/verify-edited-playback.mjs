@@ -82,8 +82,8 @@ async function play(label, fromStart = true) {
   console.log('PASS', label, JSON.stringify({ seconds: run.trace.at(-1).wall, clips: run.visited, displayedFrames: run.displayedFrames, maxProgressGapMs: run.maxProgressGapMs, maxPictureGapMs: run.maxPictureGapMs }));
 }
 try {
-  await page.goto(process.env.APP_URL || 'http://127.0.0.1:5195'); await button('Open a video').waitFor();
-  const fileDialog = page.waitForEvent('filechooser'); await button('Open a video').click();
+  await page.goto(process.env.APP_URL || 'http://127.0.0.1:5195'); await button('select your video').waitFor();
+  const fileDialog = page.waitForEvent('filechooser'); await button('select your video').click();
   await (await fileDialog).setFiles({ name: 'four-clip-test.mp4', mimeType: 'video/mp4', buffer: readFileSync(sample) });
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   for (const second of [2, 4, 6]) { await seek(second); await button('Split').click(); }

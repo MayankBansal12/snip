@@ -20,7 +20,7 @@ async function fresh() {
   page.setDefaultTimeout(12000);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(app);
-  await page.waitForFunction(() => !document.querySelector('button[aria-label="Open a video"]')?.disabled);
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="select your video"]')?.disabled);
   return page;
 }
 async function transfer(page, type, files = [], text = '') {
@@ -61,7 +61,7 @@ try {
   for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    const box = await page.getByRole('button', { name: 'Open a video', exact: true }).boundingBox();
+    const box = await page.getByRole('button', { name: 'select your video', exact: true }).boundingBox();
     assert(box.width > 250 && box.x >= 0 && box.x + box.width <= viewport.width);
     await page.screenshot({ path: path.join(out, `start-${viewport.width}.png`), fullPage: true });
   }
@@ -90,7 +90,7 @@ try {
 
   const upload = await fresh();
   const choosing = upload.waitForEvent('filechooser');
-  await upload.getByRole('button', { name: 'Open a video', exact: true }).click();
+  await upload.getByRole('button', { name: 'select your video', exact: true }).click();
   await (await choosing).setFiles(sample);
   await loaded(upload);
   log('Clicking the upload area opens a file picker and imports a video');
@@ -103,9 +103,9 @@ try {
 
   const project = await fresh();
   const projectChooser = project.waitForEvent('filechooser');
-  await project.getByRole('button', { name: 'Open project', exact: true }).click();
+  await project.getByRole('button', { name: 'import local project', exact: true }).click();
   assert.equal((await projectChooser).isMultiple(), false);
-  log('Open project remains available through its file picker');
+  log('import local project remains available through its file picker');
   assert.deepEqual(errors, []);
   log('No browser errors');
   writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));

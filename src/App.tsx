@@ -206,12 +206,15 @@ export default function App(){
         <div className="w-full max-w-[34.25rem] text-center">
           <div className="flex items-end justify-center gap-3"><ScissorsMark className="size-14 shrink-0 text-primary sm:size-16" /><h1 className="text-7xl font-[750] leading-none tracking-[-0.075em] sm:text-[88px]">snip<span className="text-primary">.</span></h1></div>
           <p className="mt-6 text-balance text-sm text-muted-foreground sm:text-base">a simple editor for small potato stuff</p>
-          <Button variant="outline" aria-label="open a video" aria-describedby="upload-hint" aria-busy={loading || !ready} disabled={!ready || loading} onClick={() => inputRef.current?.click()} className="mt-10 h-44 w-full flex-col gap-3 rounded-2xl border-dashed border-primary/45 bg-card font-normal shadow-none sm:h-52">
+          <Button variant="outline" aria-label="select your video" aria-describedby="upload-hint" aria-busy={loading || !ready} disabled={!ready || loading} onClick={() => inputRef.current?.click()} className="mt-10 h-44 w-full flex-col gap-3 rounded-2xl border-dashed border-primary/45 bg-card font-normal shadow-none sm:h-52">
             {loading || !ready ? <Spinner className="mb-1 size-6" /> : <Plus className="mb-1 size-6 text-warning-foreground dark:text-primary" strokeWidth={1.5} />}
-            <span className="flex items-center gap-2 text-base text-warning-foreground sm:text-lg dark:text-primary">{loading ? 'opening your file…' : !ready ? 'getting things ready…' : 'open a video'}{ready && !loading && <ArrowUpRight className="size-4" />}</span>
+            <span className="inline-flex items-center gap-2 text-base leading-none text-warning-foreground sm:text-lg sm:leading-none dark:text-primary">{loading ? 'opening your file…' : !ready ? 'getting things ready…' : 'select your video'}{ready && !loading && <ArrowUpRight className="mx-0! size-[1em]" aria-hidden="true" />}</span>
             <span id="upload-hint" className="text-sm text-muted-foreground">or paste or drag and drop here</span>
           </Button>
-          <Button variant="ghost" className="mt-4 text-muted-foreground" disabled={!ready || loading} onClick={() => projectInputRef.current?.click()}><FolderOpen />open project</Button>
+          <div className="mt-4 flex flex-col items-center gap-4 sm:mt-5 sm:gap-5">
+            <span className="text-sm text-muted-foreground">or</span>
+            <Button variant="ghost" className="text-muted-foreground" disabled={!ready || loading} onClick={() => projectInputRef.current?.click()}><FolderOpen />import local project</Button>
+          </div>
           {errorAlert}
         </div>
       </div>
