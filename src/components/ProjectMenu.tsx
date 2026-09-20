@@ -3,7 +3,7 @@ import { MoreHorizontal, Download, FolderOpen, Keyboard, Moon, Plus, Sun, Trash2
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Menu, MenuGroup, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from './ui/menu';
-type Props = { filename: string; onRename: (name: string) => void; disabled: boolean; theme: string; onOpenChange: (open: boolean) => void; onOpen: () => void; onOpenProject: () => void; onSaveProject: () => void; onTheme: () => void; onHelp: () => void; onClear: () => void };
+type Props = { filename: string; onRename: (name: string) => void; disabled: boolean; theme: string; onOpenChange: (open: boolean) => void; onOpen: () => void; onOpenProject: () => void; onSaveProject: () => void; onEditJSON: () => void; onTheme: () => void; onHelp: () => void; onClear: () => void };
 export default function ProjectMenu(p: Props) {
   const [editing, setEditing] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -30,6 +30,7 @@ export default function ProjectMenu(p: Props) {
         }}>{p.filename}</button>}
       </div>
       <MenuItem onClick={p.onSaveProject}><Download />save project<MenuShortcut aria-hidden="true">.snip</MenuShortcut></MenuItem>
+      <MenuItem onClick={p.onEditJSON}>edit JSON</MenuItem>
       <MenuItem onClick={p.onOpenProject}><FolderOpen />open project</MenuItem></MenuGroup>
       <MenuSeparator />
       <MenuItem onClick={p.onOpen}><Plus />new video</MenuItem>

@@ -1,3 +1,9 @@
+import { applyCommands, compileTimeline, createSpecification, EditSession, normalizeEdits, object, parseJSON, readSpecification } from './engine';
+import type { Command } from './engine';
+import { identifySource } from './engine/source';
+import { connectAgent } from './agent-connection';
+import type { AgentHandler } from './agent-connection';
+import EditJSONDialog from './components/EditJSONDialog';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
@@ -25,6 +31,16 @@ import { TooltipProvider } from './components/ui/tooltip';
 import IconButton from './components/IconButton';
 function initialTheme(){try{return localStorage.getItem('snip-theme')|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch{return'light';}}
 export default function App(){
+  const [showJSON,setShowJSON]=useState(false);
+  const [agentToken,setAgentToken]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('agent'));
+  useEffect(()=>{if(agentToken)window.history.replaceState(null,'',location.pathname+location.search);},[agentToken]);
+  const [agentStatus,setAgentStatus]=useState('');
+  const disconnectAgent=useRef<(()=>void)|null>(null),agentHandler=useRef<AgentHandler>(async()=>{throw new Error('Editor is loading.');});
+  const session=useRef(new EditSession(uid())),exportLock=useRef(false),pointerActive=useRef(false);
+  const exportJob=useRef<{id:string;sessionId:string;revision:number;status:string;progress:number;name?:string;size?:number;error?:string}|null>(null);
+  const exportRequests=useRef(new Set<string>());
+  useEffect(()=>()=>disconnectAgent.current?.(),[]);
+  useEffect(()=>{const down=()=>{pointerActive.current=true;},up=()=>{pointerActive.current=false;};window.addEventListener('pointerdown',down);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);window.addEventListener('blur',up);return()=>{window.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);};},[]);
   const [actionsOpen,setActionsOpen]=useState(false),[showShortcuts,setShowShortcuts]=useState(false),[showMenu,setShowMenu]=useState(false),[timelineZoom,setTimelineZoom]=useState(1);
   const [source,setSource]=useState<Source|null>(null),[edits,setEdits]=useState<Edits>(()=>defaults(0));
   const editsRef=useRef(edits);editsRef.current=edits;
@@ -64,21 +80,23 @@ export default function App(){
   useEffect(()=>{const visibility=()=>{if(document.hidden)pausePlayback();};document.addEventListener('visibilitychange',visibility);return()=>document.removeEventListener('visibilitychange',visibility);},[pausePlayback]);
 
   const checkpoint=useCallback(()=>{const h=history.current;const next=structuredClone(editsRef.current);if(JSON.stringify(h.past.at(-1))!==JSON.stringify(next))h.past=[...h.past.slice(-59),next];h.future=[];refreshHistory(v=>v+1);},[]);
-  const apply=useCallback((next:Edits)=>{
+  const apply=useCallback((next:Edits,advanceRevision=true)=>{
+    if(advanceRevision)session.current.changed();
     editsRef.current=next;setEdits(next);setDownload(null);
     const v=videoRef.current;let sourceTime=v?.currentTime??next.clips[0].start;
     let index=next.clips.findIndex((c,i)=>sourceTime>=c.start&&(sourceTime<c.end||(i===next.clips.length-1&&sourceTime<=c.end)));
     if(index<0){index=next.clips.findIndex(c=>c.start>=sourceTime);if(index<0)index=next.clips.length-1;sourceTime=next.clips[index].start;if(v)v.currentTime=sourceTime;}
     activeClip.current=index;setTime(toSequenceTime(sourceTime,next,index));setSelectedClip(old=>next.clips.some(c=>c.id===old)?old:next.clips[index].id);
   },[]);
-  const update=useCallback((patch:Partial<Edits>,record=true)=>{if(record)checkpoint();apply({...editsRef.current,...(patch.crop?{resolution:'original'}:{}),...patch});},[apply,checkpoint]);
+  const update=useCallback((patch:Partial<Edits>,record=true)=>{if(!source||exportLock.current)return;const next=normalizeEdits({...editsRef.current,...(patch.crop?{resolution:'original'}:{}),...patch},source.duration);if(record)checkpoint();apply(next);},[apply,checkpoint,source]);
+  const command=useCallback((commands:Command[],record=true)=>{if(!source||exportLock.current)return;const next=applyCommands(editsRef.current,commands,source.duration);if(record)checkpoint();apply(next);},[apply,checkpoint,source]);
   const undo=useCallback(()=>{const h=history.current;if(!h.past.length)return;pausePlayback();h.future.push(structuredClone(editsRef.current));apply(h.past.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
   const redo=useCallback(()=>{const h=history.current;if(!h.future.length)return;pausePlayback();h.past.push(structuredClone(editsRef.current));apply(h.future.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
   const seek=useCallback((position:number)=>{const e=editsRef.current,p=toSourceTime(position,e);pausePlayback();if(videoRef.current)videoRef.current.currentTime=p.time;activeClip.current=p.index;if(videoRef.current)videoRef.current.playbackRate=clipSpeed(e.clips[p.index],e);setSelectedClip(e.clips[p.index].id);setTime(toSequenceTime(p.time,e,p.index));},[pausePlayback]);
   const togglePlayback=useCallback(()=>{if(!busy)playback.current?.toggle();},[busy]);
   const splitLocation=toSourceTime(time,edits),at=edits.clips[splitLocation.index];const canSplit=!!at&&splitLocation.time-at.start>=.1&&at.end-splitLocation.time>=.1;
-  const split=useCallback(()=>{const e=editsRef.current,position=toSourceTime(time,e),c=e.clips[position.index];if(position.time-c.start<.1||c.end-position.time<.1)return;pausePlayback();const right={...c,id:uid(),start:position.time,end:c.end};update({clips:[...e.clips.slice(0,position.index),{...c,end:position.time},right,...e.clips.slice(position.index+1)]});setSelectedClip(right.id);},[time,update,pausePlayback]);
-  const deleteClip=useCallback(()=>{const e=editsRef.current;pausePlayback();setActionsOpen(false);if(e.clips.length<2){setConfirmClear(true);return;}update({clips:e.clips.filter(c=>c.id!==selectedClip)});},[selectedClip,update,pausePlayback]);
+  const split=useCallback(()=>{const e=editsRef.current,position=toSourceTime(time,e),c=e.clips[position.index];if(position.time-c.start<.1||c.end-position.time<.1)return;pausePlayback();const rightId=uid();command([{action:'splitClip',clipId:c.id,sourceTime:position.time,rightClipId:rightId}]);setSelectedClip(rightId);},[time,command,pausePlayback]);
+  const deleteClip=useCallback(()=>{const e=editsRef.current;pausePlayback();setActionsOpen(false);if(e.clips.length<2){setConfirmClear(true);return;}command([{action:'deleteClip',clipId:selectedClip}]);},[selectedClip,command,pausePlayback]);
   const openExport=()=>{if(!source||busy||loading)return;pausePlayback();setDownload(null);setError('');setShowExport(true);};
   const expandPreview=()=>{if(document.fullscreenElement)void document.exitFullscreen();else void previewRef.current?.requestFullscreen?.().catch(()=>{});};
   const openClipActions=(id:string)=>{
@@ -87,11 +105,17 @@ export default function App(){
     if(activeClip.current!==index)seek(e.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,e),0));
     setSelectedClip(id);setActionsOpen(true);
   };
-  const changeClip=(patch:Partial<Clip>,record=true)=>update({clips:editsRef.current.clips.map(c=>c.id===selectedClip?{...c,...patch}:c)},record);
+  const changeClip=(patch:Partial<Clip>,record=true)=>{
+    const c=editsRef.current.clips.find(c=>c.id===selectedClip);if(!c)return;const commands:Command[]=[];
+    if(patch.speed!==undefined)commands.push({action:'setSpeed',clipId:c.id,speed:patch.speed});
+    if(patch.zoom!==undefined)commands.push({action:'setZoom',clipId:c.id,zoom:patch.zoom});
+    if(patch.start!==undefined||patch.end!==undefined)commands.push({action:'trimClip',clipId:c.id,sourceStart:patch.start??c.start,sourceEnd:patch.end??c.end});
+    if(commands.length)command(commands,record);
+  };
   const mergeClips=(index:number)=>{
     const e=editsRef.current,left=e.clips[index],right=e.clips[index+1];
     if(!canMergeClips(left,right,e))return;
-    pausePlayback();update({clips:[...e.clips.slice(0,index),{...left,end:right.end},...e.clips.slice(index+2)]});setSelectedClip(left.id);setActionsOpen(false);
+    pausePlayback();command([{action:'mergeClips',clipId:left.id}]);setSelectedClip(left.id);setActionsOpen(false);
   };
   const seekCut=(direction:number)=>{
     const e=editsRef.current,position=toSequenceTime(videoRef.current?.currentTime??e.clips[0].start,e,activeClip.current),cuts=[0];
@@ -101,7 +125,7 @@ export default function App(){
   const trimAtPlayhead=(edge:'start'|'end')=>{
     const e=editsRef.current,p=toSourceTime(toSequenceTime(videoRef.current?.currentTime??0,e,activeClip.current),e),c=e.clips[p.index];
     if(edge==='start'?(p.time-c.start<.001||c.end-p.time<.1):(c.end-p.time<.001||p.time-c.start<.1))return;
-    pausePlayback();update({clips:e.clips.map((clip,i)=>i===p.index?{...clip,[edge]:p.time}:clip)});
+    pausePlayback();command([{action:'trimClip',clipId:c.id,sourceStart:edge==='start'?p.time:c.start,sourceEnd:edge==='end'?p.time:c.end}]);
   };
   const resetTrim=()=>{
     const e=editsRef.current;
@@ -114,7 +138,7 @@ export default function App(){
     const e=editsRef.current,index=e.clips.findIndex(c=>c.id===selectedClip),next=index+direction;
     if(next<0||next>=e.clips.length)return;
     const clips=[...e.clips];[clips[index],clips[next]]=[clips[next],clips[index]];
-    pausePlayback();update({clips});seek(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
+    pausePlayback();command([{action:'reorderClips',clipIds:clips.map(c=>c.id)}]);seek(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
   };
   const nudgeTrim=(edge:'start'|'end',direction:number)=>{
     if(!source)return;
@@ -125,11 +149,11 @@ export default function App(){
     pausePlayback();changeClip({[edge]:value});
   };
   const cycle=(presets:readonly number[],value:number,direction:number)=>(direction>0?presets.find(p=>p>value):[...presets].reverse().find(p=>p<value))??(direction>0?presets[0]:presets[presets.length-1]);
-  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||!ready||showExport||showShortcuts||confirmClear||showMenu||actionsOpen,
+  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||!ready||showExport||showJSON||showShortcuts||confirmClear||showMenu||actionsOpen,
     focusClip:direction=>{
       const e=editsRef.current,index=e.clips.findIndex(c=>c.id===selectedClip),next=clamp(index+direction,0,e.clips.length-1);
       seek(e.clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
-      document.querySelector<HTMLElement>(`[data-clip-id="${e.clips[next].id}"]`)?.focus({preventScroll:true});
+      document.querySelector<HTMLElement>(`[data-clip-id="${CSS.escape(e.clips[next].id)}"]`)?.focus({preventScroll:true});
     },
     play:togglePlayback,seekBy:seconds=>seek(toSequenceTime(videoRef.current?.currentTime??0,editsRef.current,activeClip.current)+seconds),seekEdge:end=>seek(end?sequenceDuration(editsRef.current):0),seekCut,
     split,remove:deleteClip,trim:trimAtPlayhead,undo,redo,mute:()=>update({muted:!editsRef.current.muted}),
@@ -161,7 +185,7 @@ export default function App(){
     }catch(err){setError(err instanceof Error?err.message:'couldn’t save this project. please try again.');}
   }
   async function openFile(file?:File,project=false){
-    if(!file||!ready||busy||loadLock.current)return;
+    if(!file||!ready||exportLock.current||loadLock.current)return;
     const isProject=project||/\.snip$/i.test(file.name);
     if(!isProject&&!file.type.startsWith('video/')&&!/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name)){setError('choose a video or a saved .snip project.');if(inputRef.current)inputRef.current.value='';return;}
     if(!isProject&&(!file.size||file.size>MAX_VIDEO_SIZE)){setError(!file.size?'this file is empty. choose a video saved on your device.':'choose a video under 500 mb for this little editor.');if(inputRef.current)inputRef.current.value='';return;}
@@ -170,33 +194,99 @@ export default function App(){
       const nextProject=isProject?await readProjectFile(file):await readMetadata(file).then(source=>({source,edits:defaults(source.duration)}));
       const {source:next,edits:nextEdits}=nextProject;
       await saveProject(next,nextEdits);
-      setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
+      session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
       if(isProject)setNotice('project opened');
     }catch(err){setError(err instanceof Error?err.message:'couldn’t open or save this file. your browser’s storage may be full.');}
     finally{setLoading(false);loadLock.current=false;if(inputRef.current)inputRef.current.value='';if(projectInputRef.current)projectInputRef.current.value='';}
   }
   async function startExport(useDefaults=false){
-    if(!source||busy)return;pausePlayback();setBusy(true);setError('');setProgress(0);setDownload(null);cancelled.current=false;
-    const exportEdits=useDefaults?{...edits,format:defaults(0).format,quality:defaults(0).quality,resolution:defaults(0).resolution}:edits;
+    if(!source||exportLock.current||loadLock.current)return;pausePlayback();setBusy(true);setError('');setProgress(0);setDownload(null);cancelled.current=false;
+    const exportEdits=useDefaults?{...editsRef.current,format:defaults(0).format,quality:defaults(0).quality,resolution:defaults(0).resolution}:editsRef.current;
     if(useDefaults)update({format:exportEdits.format,quality:exportEdits.quality,resolution:exportEdits.resolution},false);
-    try{const blob=await exportVideo(source,exportEdits,(fraction,label)=>{setProgress(fraction);setStage(label);});if(cancelled.current)return;const next={url:URL.createObjectURL(blob),name:`${source.name.replace(/\.[^.]+$/,'')}-snip.${exportEdits.format}`,size:blob.size};setDownload(next);const a=document.createElement('a');a.href=next.url;a.download=next.name;document.body.appendChild(a);a.click();a.remove();}
-    catch(err){if(!cancelled.current)setError(err instanceof Error?err.message:'export failed. try a smaller resolution.');}finally{setBusy(false);}
+    exportLock.current=true;
+    if(!exportJob.current||exportJob.current.status!=='running')exportJob.current={id:uid(),sessionId:session.current.sessionId,revision:session.current.revision,status:'running',progress:0};
+    const job=exportJob.current;
+    try{const blob=await exportVideo(source,exportEdits,(fraction,label)=>{job.progress=fraction;setProgress(fraction);setStage(label);});if(cancelled.current)return;const next={url:URL.createObjectURL(blob),name:`${source.name.replace(/\.[^.]+$/,'')}-snip.${exportEdits.format}`,size:blob.size};setDownload(next);Object.assign(job,{status:'complete',progress:1,name:next.name,size:next.size});const a=document.createElement('a');a.href=next.url;a.download=next.name;document.body.appendChild(a);a.click();a.remove();}
+    catch(err){if(!cancelled.current){const message=err instanceof Error?err.message:'export failed. try a smaller resolution.';Object.assign(job,{status:'failed',error:message});setError(message);}}finally{exportLock.current=false;setBusy(false);}
   }
-  const stopExport=()=>{cancelled.current=true;cancelExport();setBusy(false);setProgress(0);};
-  const removeProject=async()=>{try{await clearProject();pausePlayback();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
+  const stopExport=()=>{cancelled.current=true;if(exportJob.current)exportJob.current.status='cancelled';cancelExport();setProgress(0);};
+  const removeProject=async()=>{try{await clearProject();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
+  const ensureEditable=()=>{
+    if(!source||!ready)throw new Error('Open a video in the editor first.');
+    if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
+    return source;
+  };
+  const readJSON=async()=>{
+    const currentSource=ensureEditable(),currentSession=session.current;
+    const info=await identifySource(currentSource);
+    if(currentSession!==session.current)throw new Error('Project changed. Try again.');
+    return JSON.stringify(createSpecification(info,editsRef.current),null,2);
+  };
+  const applyJSON=async(text:string)=>{
+    const currentSource=ensureEditable(),currentSession=session.current,revision=currentSession.revision;
+    const raw=parseJSON(text),info=await identifySource(currentSource);
+    ensureEditable();
+    if(currentSession!==session.current||revision!==currentSession.revision)throw new Error('Project changed. Read the JSON again.');
+    const spec=readSpecification(raw,info);
+    pausePlayback();checkpoint();apply(spec.edits);setNotice('JSON edits applied');
+  };
+  agentHandler.current=async(method,params)=>{
+    if(method==='get_export_status')return exportJob.current?{...exportJob.current}:null;
+    if(method==='start_export'&&exportJob.current){
+      const request=object(params),job=exportJob.current;
+      if(Object.keys(request).some(key=>!['requestId','sessionId','revision'].includes(key)))throw new Error('Unknown export request field.');
+      if(request.requestId===job.id){
+        if(request.sessionId!==job.sessionId||request.revision!==job.revision)throw new Error('Export request ID was already used with different contents.');
+        return {...job};
+      }
+    }
+    const currentSource=ensureEditable();
+    if(method==='get_project'){
+      const currentSession=session.current,info=await identifySource(currentSource);
+      if(currentSession!==session.current)throw new Error('Project changed. Read it again.');
+      const plan=compileTimeline(currentSource,editsRef.current);
+      return {sessionId:currentSession.sessionId,revision:currentSession.revision,specification:createSpecification(info,plan.edits),timeline:plan.clips,duration:plan.duration,output:plan.output};
+    }
+    if(method==='apply_edits'){
+      if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying agent edits.');
+      if(showJSON||showExport||actionsOpen||showShortcuts||confirmClear||showMenu)throw new Error('Close the editor dialog or clip controls before applying agent edits.');
+      const result=session.current.apply(params,editsRef.current,currentSource.duration);
+      if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);setNotice('agent edits applied');}
+      return {sessionId:session.current.sessionId,revision:result.revision,currentRevision:session.current.revision,duplicate:result.duplicate};
+    }
+    if(method==='start_export'){
+      if(pointerActive.current)throw new Error('Finish the current pointer interaction before exporting.');
+      const request=object(params);
+      if(Object.keys(request).some(key=>!['requestId','sessionId','revision'].includes(key)))throw new Error('Unknown export request field.');
+      if(typeof request.requestId!=='string'||!request.requestId.length||request.requestId.length>128)throw new Error('Export needs a request ID.');
+      if(request.sessionId!==session.current.sessionId||request.revision!==session.current.revision)throw new Error('Project changed. Read it again before exporting.');
+      if(exportRequests.current.has(request.requestId)){
+        if(exportJob.current?.id===request.requestId)return {...exportJob.current};
+        throw new Error('This export request was already handled.');
+      }
+      if(showJSON||actionsOpen||confirmClear||showShortcuts||showMenu)throw new Error('Close the editor dialog or clip controls before exporting.');
+      if(exportRequests.current.size>=10000)throw new Error('Export request limit reached. Reopen the project.');
+      exportRequests.current.add(request.requestId);
+      exportJob.current={id:request.requestId,sessionId:session.current.sessionId,revision:session.current.revision,status:'running',progress:0};
+      setShowExport(true);void startExport();return {...exportJob.current};
+    }
+    throw new Error('Unknown agent method.');
+  };
   const themeButton = <IconButton label={`switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</IconButton>;
   const brand = <div className="flex shrink-0 items-center gap-2 sm:gap-2.5"><ScissorsMark className="size-5 text-primary sm:size-6" /><span className="text-xl font-bold tracking-tight sm:text-2xl">snip<span className="text-primary">.</span></span></div>;
   const errorAlert = error && !showExport && <Alert variant="error" className="mt-4"><AlertDescription className="flex items-center justify-between gap-3">{error}<Button variant="ghost" size="icon-sm" aria-label="dismiss error" onClick={() => setError('')}><X /></Button></AlertDescription></Alert>;
-  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
+  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !showJSON && !agentToken && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
+    {!source && agentStatus && <Button className="absolute left-5 top-5" variant="ghost" size="sm" onClick={()=>{disconnectAgent.current?.();disconnectAgent.current=null;setAgentStatus('');}}>{agentStatus} · disconnect</Button>}
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
     <input ref={projectInputRef} type="file" id="project-file" accept=".snip" hidden onChange={e => void openFile(e.target.files?.[0],true)} />
     {draggingFile && !busy && <div className="pointer-events-none fixed inset-4 z-50 flex items-center justify-center bg-background/95"><Empty><EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>drop your video or project</EmptyTitle><EmptyDescription>everything stays on this device.</EmptyDescription></EmptyHeader></Empty></div>}
     {source && <header className="editor-header flex items-center justify-between gap-3 px-3 py-4 sm:px-8 sm:py-5">
       {brand}
+      {agentStatus && <Button className="min-w-0 shrink truncate" aria-label={`${agentStatus} · disconnect`} title="disconnect agent" variant="ghost" size="sm" onClick={()=>{disconnectAgent.current?.();disconnectAgent.current=null;setAgentStatus('');}}>{agentStatus} · disconnect</Button>}
       <div className="header-actions flex items-center gap-1 sm:gap-2">
         <span className="sr-only" role="status">{loading ? 'opening…' : saved}</span>
         <span className="hidden sm:contents">{themeButton}</span>
-        <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
+        <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onEditJSON={()=>{pausePlayback();setShowJSON(true);}} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
         <Button aria-label="export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine className="hidden sm:block" />export</Button>
       </div>
     </header>}
@@ -233,6 +323,8 @@ export default function App(){
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}
     </main>}
+    <EditJSONDialog open={showJSON} onClose={()=>setShowJSON(false)} onRead={readJSON} onApply={applyJSON} />
+    <AlertDialog open={!!agentToken} onOpenChange={open=>{if(!open)setAgentToken(null);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription>The local agent can read edit settings, change the open project, and start a browser export. Video bytes stay in this browser. Choose a video here after connecting.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>cancel</AlertDialogClose><Button onClick={()=>{try{disconnectAgent.current?.();disconnectAgent.current=connectAgent(agentToken!, (method,params)=>agentHandler.current(method,params),setAgentStatus);setAgentToken(null);}catch(e){setError(e instanceof Error?e.message:'Connection failed.');setAgentToken(null);}}}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
     <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     <ExportDialog open={showExport} source={source} edits={edits} busy={busy} progress={progress} stage={stage} download={download} error={error} onUpdate={update} onClose={() => setShowExport(false)} onExport={() => void startExport()} onCancel={stopExport} />
     <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>clear this video?</AlertDialogTitle><AlertDialogDescription>this removes the video and edits saved in this browser. your original file stays yours.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>keep editing</AlertDialogClose><Button variant="destructive" onClick={() => void removeProject()}>clear video</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>

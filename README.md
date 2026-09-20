@@ -11,3 +11,9 @@ a simple video editor for short demos, right in your browser.
 - keep videos on your device and edit offline after the first load.
 
 please report failures by opening an issue. pull requests are welcome.
+
+## JSON editing and agents
+
+Choose **project menu → edit JSON** to download or apply a source-bound edit specification. The editor and agent share a validated TypeScript editing core, with undo, revision checks, and retry protection. Browser exports use a fixed FFmpeg profile for repeatability.
+
+The optional local MCP bridge lets an agent inspect and edit the open project and start an export. Video stays in the browser; the result is a local download. See [setup, JSON format, and rendering guarantees](docs/editing-engine.md).

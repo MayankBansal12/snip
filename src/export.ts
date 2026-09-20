@@ -1,5 +1,6 @@
+import { compileTimeline } from './engine';
 import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
-import { clipCrop, clipSpeed, cropPixels, outputSize, placement, sequenceDuration } from './types';
+import { clipCrop, clipSpeed, cropPixels, outputSize, placement } from './types';
 import { ZOOM_TRANSITION_FPS, zoomTransitionFilter } from './zoom';
 import { colorLut, renderAnnotations } from './effects';
 import type { Source, Edits } from './types';
@@ -19,9 +20,9 @@ export function canCopyPicture(source: Source, edits: Edits): boolean {
     && edits.annotations.length === 0;
 }
 
-async function loadEngine(source: Source): Promise<{ ffmpeg: FFmpeg; threads: number }> {
+async function loadEngine(source: Source, deterministic: boolean): Promise<{ ffmpeg: FFmpeg; threads: number }> {
   // Large frames already consume substantial memory per decoder/encoder thread.
-  const threads = globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined'
+  const threads = !deterministic && globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined'
     ? Math.max(1, Math.min(navigator.hardwareConcurrency || 2, source.width * source.height > 4_000_000 ? 2 : 4)) : 1;
   let ffmpeg = new FFmpeg(); current = ffmpeg;
   if (threads > 1) {
@@ -43,10 +44,12 @@ async function loadEngine(source: Source): Promise<{ ffmpeg: FFmpeg; threads: nu
   }
 }
 
-export async function exportVideo(source: Source, edits: Edits, progress: (fraction: number, stage: string) => void): Promise<Blob> {
+export async function exportVideo(source: Source, edits: Edits, progress: (fraction: number, stage: string) => void, deterministic = true): Promise<Blob> {
+  const plan = compileTimeline(source, edits);
+  edits = plan.edits;
   progress(0,'Preparing the video engine');
-  const { ffmpeg, threads } = await loadEngine(source);
-  const duration = sequenceDuration(edits); let lastProgress=0, hasAudio=false, probing=true, frameRate=0;
+  const { ffmpeg, threads } = await loadEngine(source, deterministic);
+  const duration = plan.duration; let lastProgress=0, hasAudio=false, probing=true, frameRate=0;
   const logs:string[]=[]; const videoStreams:string[]=[], audioStreams:string[]=[];
   ffmpeg.on('log',({message})=>{if(probing && /Stream #0:.*Video:/.test(message))videoStreams.push(message);if(probing && /Stream #0:.*Audio:/.test(message))audioStreams.push(message);if(probing && /Stream #0:.*Audio:/.test(message))hasAudio=true;if(probing&&!frameRate&&/Stream #0:.*Video:/.test(message)){const rate=message.match(/(\d+(?:\.\d+)?) fps/);if(rate)frameRate=Number(rate[1]);}logs.push(message);if(logs.length>35)logs.shift();});
   ffmpeg.on('progress',({time})=>{if(probing||nativeController)return;lastProgress=Math.max(lastProgress,Math.min(.98,time/1_000_000/duration));progress(lastProgress,'Exporting your video');});
@@ -61,7 +64,7 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
     const compatibleAudio=audioStreams.length<=1 && audioStreams.every(line=>/Audio: aac\b/.test(line));
     const header=new Uint8Array(await source.file.slice(0,12).arrayBuffer());
     const mp4=new TextDecoder().decode(header.slice(4,8))==='ftyp' && new TextDecoder().decode(header.slice(8,12))!=='qt  ';
-    if(canCopyPicture(source,edits) && compatibleVideo && compatibleAudio && mp4){
+    if(!deterministic && canCopyPicture(source,edits) && compatibleVideo && compatibleAudio && mp4){
       if(!edits.muted || audioStreams.length===0){
         progress(1,'Your video is ready');
         return source.file.slice(0,source.file.size,'video/mp4');
@@ -74,7 +77,7 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
       progress(1,'Your video is ready');
       return new Blob([new Uint8Array(data)],{type:'video/mp4'});
     }
-    if(edits.format==='mp4' && edits.filter==='Original' && !edits.brightness && !edits.contrast
+    if(!deterministic && edits.format==='mp4' && edits.filter==='Original' && !edits.brightness && !edits.contrast
       && !videoStreams.some(line=>/bt2020|smpte2084|arib-std-b67/.test(line))){
       const controller=new AbortController();nativeController=controller;
       try{
@@ -145,6 +148,7 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
     graph.push(`[joined]${filters.join(',')}[picture]`);
     let videoLabel='picture';
     if(edits.annotations.length){
+      await document.fonts.ready;
       progress(0,'Rendering your annotations');
       await ffmpeg.writeFile('annotations.png',await renderAnnotations(edits.annotations,output.width,output.height));
       args.push('-loop','1','-i','annotations.png');
@@ -159,7 +163,7 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
     args.push('-r',String(outputFrameRate),'-fps_mode','vfr','-enc_time_base','1:90000');
     if(edits.format==='mp4')args.push('-c:v','libx264','-preset','veryfast','-crf',edits.quality==='maximum'?'14':'23','-pix_fmt','yuv420p','-c:a','aac','-b:a','256k','-movflags','+faststart');
     else args.push('-c:v','libvpx','-crf',edits.quality==='maximum'?'4':'12','-b:v',String(Math.round(output.width*output.height*(edits.quality==='maximum'?.24:.1)*30)),'-deadline','good','-cpu-used','4','-lag-in-frames','0','-auto-alt-ref','0','-pix_fmt','yuv420p','-c:a','libopus','-b:a','192k');
-    args.push('-t',String(duration),'-threads',String(threads),`output.${edits.format}`);
+    args.push('-map_metadata','-1','-t',String(duration),'-threads',String(threads),`output.${edits.format}`);
     progress(0,'Exporting your video');
     if(await ffmpeg.exec(args)!==0)throw new Error('This video could not be exported. Try a smaller resolution or MP4.');
     const data=await ffmpeg.readFile(`output.${edits.format}`);

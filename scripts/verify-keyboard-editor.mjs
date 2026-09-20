@@ -39,7 +39,7 @@ await button('reset trim').click();await waitStore(e=>e.clips[1].start===0);
  assert.equal(await button('reset trim').count(),0);assert.equal(await page.locator('.timeline-foot .tabular-nums').count(),0);
  await page.screenshot({path:'/tmp/snip-keyboard-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/snip-keyboard-mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
- await button('export video').click();await page.getByText('no watermark. no upload. just your video in your device.',{exact:true}).waitFor();await button('keep editing').click();await page.getByRole('dialog').waitFor({state:'hidden'});
+ await button('export video').click();await page.getByText('no watermark',{exact:true}).waitFor();await button('keep editing').click();await page.getByRole('dialog').waitFor({state:'hidden'});
  await key('?');await page.getByRole('dialog').waitFor();await button('close keyboard shortcuts').click();
  await page.setViewportSize({width:1440,height:1000});await page.waitForTimeout(250);const downloading=page.waitForEvent('download',{timeout:180000});await key('Control+Shift+e');const download=await downloading;assert.equal(await download.failure(),null);await button('back to editing').click();await page.getByRole('dialog').waitFor({state:'hidden'});
  const expected=(await stored()).clips;

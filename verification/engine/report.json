@@ -1,0 +1,29 @@
+[
+  {
+    "check": "MCP discovery works; unpaired and foreign-origin connections are rejected"
+  },
+  {
+    "check": "MCP edits update the real editor; retries, stale edits, and invalid batches preserve state",
+    "duration": 5
+  },
+  {
+    "check": "An agent batch is one undo step and human undo advances revision"
+  },
+  {
+    "check": "JSON dialog rejects a different source, applies valid JSON, and supports undo"
+  },
+  {
+    "check": "Two browser exports have identical decoded video/audio, expected duration, dimensions, and audio",
+    "duration": "5.000000"
+  },
+  {
+    "check": "Export starts at the requested source second",
+    "meanPixelError": 0.5507465277777778
+  },
+  {
+    "check": "Cancellation preserves edits and old export retries cannot create a second job"
+  },
+  {
+    "check": "WebM output settings and mute produce the expected browser export"
+  }
+]
