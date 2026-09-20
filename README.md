@@ -117,3 +117,13 @@ The browser suites use `scripts/ui.mjs` to interact with coss selects and menus 
 Start-screen layout and file-picker, drop, and clipboard imports can be checked with `VIDEO_SAMPLE=/path/to/8-second-video.mp4 node scripts/verify-start-screen.mjs`.
 
 Run `VIDEO_SAMPLE=/path/to/video.mp4 npm run test:keyboard` against `APP_URL` (default port 5196) with a CDP browser at `CDP_URL` (default port 19384). The fixture must be at least six seconds long. This suite covers the inline toolbar, custom values, keyboard editing, reordering, project roundtrips, mobile layout, and default export.
+
+## Export performance
+
+Unchanged compatible H.264/AAC MP4 exports at original resolution and maximum quality skip re-encoding; muting alone copies the video stream. Supported SDR H.264 MP4 edits use native browser encoding, preserving source frame cadence outside zoom transitions and rendering camera motion at least at 60 fps. Native compression differs from FFmpeg, so output size and pixels can differ. Audio retains pitch when speed changes.
+
+Unsupported formats, grading, HDR, or native encoder failures use FFmpeg. The fallback mounts source files without copying them into WASM memory and uses up to four threads (two above four megapixels), with a single-thread fallback if the threaded core cannot load.
+
+Vite dev/preview and `public/_headers` provide `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Configure equivalent headers on hosts that do not support `_headers` to enable threading. Both FFmpeg cores are cached for offline use; the threaded core adds approximately 32 MB. Bundled cores come from the matching npm packages' `dist/esm` directories.
+
+Export regression checks in `scripts/verify-export-fast-paths.mjs`, `scripts/verify-export-compatibility.mjs`, and `scripts/verify-native-geometry.mjs` run against a Vite dev server and a CDP browser. Set `APP_URL`, `CDP_URL`, and, if not on PATH, `FFMPEG_PATH`/`FFPROBE_PATH`. They cover stream copying, native/fallback encoding, cancellation, timing and rendering geometry. `scripts/verify-export-offline.mjs` runs against a production preview with `VIDEO_SAMPLE` pointing to a small MP4; set `EXPECT_NATIVE=1` to require native encoding.
