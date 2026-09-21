@@ -30,8 +30,6 @@ try {
   log('MCP discovery works; unpaired and foreign-origin connections are rejected');
   await page.goto(pairing.url);await button('connect agent').click();
   await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
-  await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
-  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
   // Reopening a pairing fragment in the same tab must require consent again.
   await button('agent connected · disconnect').click();
   await page.goto(pairing.url);await button('connect agent').waitFor();
@@ -41,6 +39,8 @@ try {
   await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
   await page.getByRole('alertdialog').waitFor({state:'hidden'});
   log('Same-tab pairing reconnects with explicit consent and clears the token');
+  await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
+  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
   // Trim handles stop propagation and retain a clip snapshot while dragging.
   let dragProject=await call('get_project');
   const handle=await page.getByRole('slider',{name:'Clip 1 start',exact:true}).boundingBox();
@@ -79,15 +79,11 @@ try {
   await page.keyboard.press('Control+Shift+z');assert.equal(await page.locator('.timeline-clip').count(),2);
   project=await call('get_project');assert.deepEqual(project.specification.edits,(await call('get_project')).specification.edits);
   log('An agent batch is one undo step and human undo advances revision');
-  await button('project menu').click();await page.getByRole('menuitem',{name:'edit JSON',exact:true}).click();
-  const textarea=page.getByRole('textbox',{name:'edit specification'});await page.waitForFunction(()=>document.querySelector('textarea')?.value.includes('sha256'));
-  const json=JSON.parse(await textarea.inputValue());json.source.sha256='0'.repeat(64);
-  await textarea.fill(JSON.stringify(json));await button('apply edits').click();await page.getByText(/belongs to a different source/).waitFor();
-  json.source.sha256=project.specification.source.sha256;json.edits.clips[0].speed=1.25;
-  await textarea.fill(JSON.stringify(json));await button('apply edits').click();await textarea.waitFor({state:'hidden'});
-  assert.equal((await call('get_project')).specification.edits.clips[0].speed,1.25);
-  await unFocus();await page.keyboard.press('Control+z');project=await call('get_project');assert.equal(project.duration,5);
-  log('JSON dialog rejects a different source, applies valid JSON, and supports undo');
+  assert.equal(await button('edit with your agent').count(),0);
+  await button('project menu').click();
+  assert.equal(await page.getByRole('menuitem',{name:'edit JSON',exact:true}).count(),0);
+  await page.getByRole('menu').focus();await page.keyboard.press('Escape');
+  await page.getByRole('menu').waitFor({state:'hidden'});
   const files=[];
   for(let i=0;i<2;i++){
     const request={requestId:`export-${i}`,sessionId:project.sessionId,revision:project.revision};

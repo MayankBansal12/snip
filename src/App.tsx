@@ -1,9 +1,9 @@
-import { applyCommands, compileTimeline, createSpecification, EditSession, normalizeEdits, object, parseJSON, readSpecification } from './engine';
+import { applyCommands, compileTimeline, createSpecification, EditSession, normalizeEdits, object } from './engine';
 import type { Command } from './engine';
 import { identifySource } from './engine/source';
 import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
-import EditJSONDialog from './components/EditJSONDialog';
+import AgentOnboarding from './components/AgentOnboarding';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
@@ -31,7 +31,6 @@ import { TooltipProvider } from './components/ui/tooltip';
 import IconButton from './components/IconButton';
 function initialTheme(){try{return localStorage.getItem('snip-theme')|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch{return'light';}}
 export default function App(){
-  const [showJSON,setShowJSON]=useState(false);
   const [agentToken,setAgentToken]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('agent'));
   useEffect(()=>{
     const readPairingLink=()=>{
@@ -158,7 +157,7 @@ export default function App(){
     pausePlayback();changeClip({[edge]:value});
   };
   const cycle=(presets:readonly number[],value:number,direction:number)=>(direction>0?presets.find(p=>p>value):[...presets].reverse().find(p=>p<value))??(direction>0?presets[0]:presets[presets.length-1]);
-  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||!ready||showExport||showJSON||showShortcuts||confirmClear||showMenu||actionsOpen,
+  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||!ready||showExport||showShortcuts||confirmClear||showMenu||actionsOpen,
     focusClip:direction=>{
       const e=editsRef.current,index=e.clips.findIndex(c=>c.id===selectedClip),next=clamp(index+direction,0,e.clips.length-1);
       seek(e.clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
@@ -225,20 +224,6 @@ export default function App(){
     if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
     return source;
   };
-  const readJSON=async()=>{
-    const currentSource=ensureEditable(),currentSession=session.current;
-    const info=await identifySource(currentSource);
-    if(currentSession!==session.current)throw new Error('Project changed. Try again.');
-    return JSON.stringify(createSpecification(info,editsRef.current),null,2);
-  };
-  const applyJSON=async(text:string)=>{
-    const currentSource=ensureEditable(),currentSession=session.current,revision=currentSession.revision;
-    const raw=parseJSON(text),info=await identifySource(currentSource);
-    ensureEditable();
-    if(currentSession!==session.current||revision!==currentSession.revision)throw new Error('Project changed. Read the JSON again.');
-    const spec=readSpecification(raw,info);
-    pausePlayback();checkpoint();apply(spec.edits);setNotice('JSON edits applied');
-  };
   agentHandler.current=async(method,params)=>{
     if(method==='get_export_status')return exportJob.current?{...exportJob.current}:null;
     if(method==='start_export'&&exportJob.current){
@@ -258,7 +243,7 @@ export default function App(){
     }
     if(method==='apply_edits'){
       if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying agent edits.');
-      if(showJSON||showExport||actionsOpen||showShortcuts||confirmClear||showMenu)throw new Error('Close the editor dialog or clip controls before applying agent edits.');
+      if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu)throw new Error('Close the editor dialog or clip controls before applying agent edits.');
       const result=session.current.apply(params,editsRef.current,currentSource.duration);
       if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);setNotice('agent edits applied');}
       return {sessionId:session.current.sessionId,revision:result.revision,currentRevision:session.current.revision,duplicate:result.duplicate};
@@ -273,7 +258,7 @@ export default function App(){
         if(exportJob.current?.id===request.requestId)return {...exportJob.current};
         throw new Error('This export request was already handled.');
       }
-      if(showJSON||actionsOpen||confirmClear||showShortcuts||showMenu)throw new Error('Close the editor dialog or clip controls before exporting.');
+      if(actionsOpen||confirmClear||showShortcuts||showMenu)throw new Error('Close the editor dialog or clip controls before exporting.');
       if(exportRequests.current.size>=10000)throw new Error('Export request limit reached. Reopen the project.');
       exportRequests.current.add(request.requestId);
       exportJob.current={id:request.requestId,sessionId:session.current.sessionId,revision:session.current.revision,status:'running',progress:0};
@@ -284,23 +269,22 @@ export default function App(){
   const themeButton = <IconButton label={`switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</IconButton>;
   const brand = <div className="flex shrink-0 items-center gap-2 sm:gap-2.5"><ScissorsMark className="size-5 text-primary sm:size-6" /><span className="text-xl font-bold tracking-tight sm:text-2xl">snip<span className="text-primary">.</span></span></div>;
   const errorAlert = error && !showExport && <Alert variant="error" className="mt-4"><AlertDescription className="flex items-center justify-between gap-3">{error}<Button variant="ghost" size="icon-sm" aria-label="dismiss error" onClick={() => setError('')}><X /></Button></AlertDescription></Alert>;
-  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !showJSON && !agentToken && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
+  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !agentToken && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
     {!source && agentStatus && <Button className="absolute left-5 top-5" variant="ghost" size="sm" onClick={()=>{disconnectAgent.current?.();disconnectAgent.current=null;setAgentStatus('');}}>{agentStatus} · disconnect</Button>}
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
     <input ref={projectInputRef} type="file" id="project-file" accept=".snip" hidden onChange={e => void openFile(e.target.files?.[0],true)} />
     {draggingFile && !busy && <div className="pointer-events-none fixed inset-4 z-50 flex items-center justify-center bg-background/95"><Empty><EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>drop your video or project</EmptyTitle><EmptyDescription>everything stays on this device.</EmptyDescription></EmptyHeader></Empty></div>}
     {source && <header className="editor-header flex items-center justify-between gap-3 px-3 py-4 sm:px-8 sm:py-5">
       {brand}
-      {agentStatus && <Button className="min-w-0 shrink truncate" aria-label={`${agentStatus} · disconnect`} title="disconnect agent" variant="ghost" size="sm" onClick={()=>{disconnectAgent.current?.();disconnectAgent.current=null;setAgentStatus('');}}>{agentStatus} · disconnect</Button>}
       <div className="header-actions flex items-center gap-1 sm:gap-2">
         <span className="sr-only" role="status">{loading ? 'opening…' : saved}</span>
         <span className="hidden sm:contents">{themeButton}</span>
-        <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onEditJSON={()=>{pausePlayback();setShowJSON(true);}} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
+        <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
         <Button aria-label="export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine className="hidden sm:block" />export</Button>
       </div>
     </header>}
     {!source ? <main className="start-screen flex min-h-svh flex-col">
-      <div className="absolute right-5 top-5 sm:right-8 sm:top-7">{themeButton}</div>
+      <div className="absolute right-5 top-5 flex items-center gap-1 sm:right-8 sm:top-7"><AgentOnboarding />{themeButton}</div>
       <div className="flex flex-1 items-center justify-center px-6 pb-16 pt-24 sm:pb-36">
         <div className="w-full max-w-[34.25rem] text-center">
           <div className="flex items-end justify-center gap-3"><ScissorsMark className="size-14 shrink-0 text-primary sm:size-16" /><h1 className="text-7xl font-[750] leading-none tracking-[-0.075em] sm:text-[88px]">snip<span className="text-primary">.</span></h1></div>
@@ -332,7 +316,6 @@ export default function App(){
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}
     </main>}
-    <EditJSONDialog open={showJSON} onClose={()=>setShowJSON(false)} onRead={readJSON} onApply={applyJSON} />
     <AlertDialog open={!!agentToken} onOpenChange={open=>{if(!open)setAgentToken(null);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription>The local agent can read edit settings, change the open project, and start a browser export. Video bytes stay in this browser. Choose a video here after connecting.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>cancel</AlertDialogClose><Button onClick={()=>{try{disconnectAgent.current?.();disconnectAgent.current=connectAgent(agentToken!, (method,params)=>agentHandler.current(method,params),setAgentStatus);setAgentToken(null);}catch(e){setError(e instanceof Error?e.message:'Connection failed.');setAgentToken(null);}}}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
     <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     <ExportDialog open={showExport} source={source} edits={edits} busy={busy} progress={progress} stage={stage} download={download} error={error} onUpdate={update} onClose={() => setShowExport(false)} onExport={() => void startExport()} onCancel={stopExport} />

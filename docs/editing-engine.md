@@ -2,11 +2,11 @@
 
 The TypeScript engine validates edit state and applies atomic commands. React previews that state; browser FFmpeg renders a snapshot. Video bytes stay in the browser.
 
-## JSON without an agent
+## Agent onboarding and JSON
 
-Open a video or `.snip` project, then choose **project menu → edit JSON**. Download, edit, or load the specification and choose **apply edits**. This replaces all edits as one undo step. Export normally from the editor.
+On the landing page, hover or tap **edit with your agent** to copy a setup prompt or MCP configuration. Editing commands use JSON internally; the editor does not expose a JSON editing panel.
 
-The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source, edits }`. `source` contains the source SHA-256, byte size, width, height, and decoded duration; all must match the open video. `edits` is the complete version-2 `Edits` structure in `src/types.ts`, with explicit per-clip speed and zoom. Start from the editor's JSON or `get_project`. Unknown fields, invalid ranges, mismatched sources, and unsupported versions are rejected. JSON is limited to 8 MiB and excludes video bytes; `.snip` files still include the source and remain compatible.
+The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source, edits }`. `source` contains the source SHA-256, byte size, width, height, and decoded duration; all must match the open video. `edits` is the complete version-2 `Edits` structure in `src/types.ts`, with explicit per-clip speed and zoom. Use `get_project` to inspect the specification. Unknown fields, invalid ranges, mismatched sources, and unsupported versions are rejected. JSON is limited to 8 MiB and excludes video bytes; `.snip` files still include the source and remain compatible.
 
 ## Connect an agent
 
@@ -31,7 +31,7 @@ Configure your stdio MCP client, replacing the absolute path:
 }
 ```
 
-Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status, not video. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. A remote bb preview can test JSON and export, but cannot pair with this local-only bridge. Transfer projects between origins using `.snip` files.
+Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status, not video. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. A remote bb preview can test the landing page, editor, and export, but cannot pair with this local-only bridge. Transfer projects between origins using `.snip` files.
 
 ## Agent tools
 
@@ -64,4 +64,4 @@ FFMPEG_PATH=/path/to/ffmpeg FFPROBE_PATH=/path/to/ffprobe \
 CDP_URL=http://127.0.0.1:19410 npm run test:agent
 ```
 
-It verifies live edits, retries, invalid/stale batches, undo, source matching, drag isolation, same-tab reconnect, cancellation, valid MP4/WebM, sub-frame export failure, and repeated decoded video/audio equality. Native FFmpeg/FFprobe are independent test tools only. `npm run test:keyboard` covers existing editor controls and project roundtrips.
+It verifies live edits, retries, invalid/stale batches, undo, drag isolation, same-tab reconnect, cancellation, valid MP4/WebM, sub-frame export failure, and repeated decoded video/audio equality. Native FFmpeg/FFprobe are independent test tools only. `npm run test:keyboard` covers existing editor controls and project roundtrips.
