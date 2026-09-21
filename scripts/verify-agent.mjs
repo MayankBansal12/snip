@@ -6,13 +6,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { chromium } from 'playwright-core';
 import { WebSocket } from 'ws';
+import { createBrowserProxy } from './test-browser-proxy.mjs';
 
 const sample=process.env.VIDEO_SAMPLE;
 if(!sample)throw new Error('Set VIDEO_SAMPLE to an eight-second video with audio.');
 const out=process.env.VERIFY_OUTPUT||'/tmp/snip-engine-verification';mkdirSync(out,{recursive:true});
 const client=new Client({name:'snip-verification',version:'1.0.0'});
-const transport=new StdioClientTransport({command:process.execPath,args:[resolve('scripts/mcp-server.mjs')],stderr:'pipe'});
-const browser=await chromium.connectOverCDP(process.env.CDP_URL||'http://127.0.0.1:19410');
+const proxy=process.env.SNIP_TEST_PROXY==='1'?await createBrowserProxy():null;
+const transport=new StdioClientTransport({command:process.execPath,args:[resolve('scripts/mcp-server.mjs')],env:{...process.env,SNIP_PUBLIC_URL:'',...(proxy?.env||{})},stderr:'pipe'});
+const browser=process.env.CDP_URL
+  ? await chromium.connectOverCDP(process.env.CDP_URL)
+  : await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
 const context=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
 const page=await context.newPage(),errors=[],report=[];
 page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(20000);
@@ -24,6 +28,7 @@ try {
   await client.connect(transport);
   const tools=await client.listTools();assert.equal(tools.tools.length,5);
   const pairing=await call('get_connection'),url=new URL(pairing.url),token=url.hash.slice(7);
+  assert.equal(pairing.mode,proxy?'shared':'loopback');assert.equal(pairing.browserRequiredOnAgentHost,false);
   const forbidden=await fetch(url.origin,{headers:{Origin:'https://untrusted.example'}});assert.equal(forbidden.status,403);
   await new Promise((resolve,reject)=>{const socket=new WebSocket(`${url.origin.replace('http:','ws:')}/agent?token=${token}`,{origin:'https://untrusted.example'});socket.on('open',()=>{socket.close();reject(new Error('Unauthorized origin accepted'));});socket.on('error',()=>resolve());});
   await assert.rejects(()=>call('get_project'),/No editor connected/);
@@ -148,4 +153,4 @@ try {
   assert.deepEqual((await call('get_project')).specification.edits,project.specification.edits);
   log('A sub-frame trim cannot report a successful audio-only video export');
   assert.deepEqual(errors,[]);writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2));
-} finally {await client.close();await context.close();await browser.close();}
+} finally {await client.close();await context.close();await browser.close();await proxy?.close();}

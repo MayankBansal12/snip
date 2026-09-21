@@ -12,7 +12,7 @@ Set up Snip from ${repository} using docs/editing-engine.md. Build it locally wi
 
 ${config}
 
-Run the MCP server on the same computer as my browser. Call get_connection and give me the pairing link so I can connect and choose my video locally. Read get_project before editing, use the returned session and revision, and ask what changes I want. Let me preview the edits before starting an export. Keep the video in my browser.`;
+First check where you are running. If you are on my computer, use the local connection. If you are on a VM or remote machine, do not try to open a desktop or agent-browser for me: expose port 5188 through an authenticated HTTPS tunnel (in bb, use bb connect expose 5188), set SNIP_PUBLIC_URL in the MCP server environment to that exact HTTPS origin, and restart the MCP server. Alternatively, forward its loopback port to my computer over SSH. Call get_connection and give me the pairing link to open in my own browser, where I will connect and choose my video. The VM needs only Node.js; preview and export run in my browser. Read get_project before editing, use the returned session and revision, and ask what changes I want. Let me preview the edits before starting an export. Keep the video in my browser.`;
 
 export default function AgentOnboarding() {
   const [copied, setCopied] = useState(false);

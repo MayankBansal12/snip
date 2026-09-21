@@ -10,7 +10,7 @@ The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source
 
 ## Connect an agent
 
-Run Node.js 22+ on the **same computer as the browser**:
+Run Node.js 22+ wherever the agent runs (your computer or a headless VM):
 
 ```sh
 npm ci
@@ -31,7 +31,29 @@ Configure your stdio MCP client, replacing the absolute path:
 }
 ```
 
-Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status, not video. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. A remote bb preview can test the landing page, editor, and export, but cannot pair with this local-only bridge. Transfer projects between origins using `.snip` files.
+Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status, not video. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. The default URL is loopback-only; use the remote setup below when the agent runs elsewhere. Transfer projects between origins using `.snip` files.
+
+## Remote agents and headless VMs
+
+The agent host needs Node.js, not a browser or desktop. Open the editor in **your own browser**, choose the video there, and keep the tab open for preview/export. Do not launch `agent-browser` on the VM merely to connect a user.
+
+1. Choose a fixed bridge port, such as `5188`, and expose it through an authenticated HTTPS tunnel that forwards HTTP and WebSocket upgrades. In bb, run `bb connect expose 5188` on the VM (or use `--host <VM-name>` from another enrolled host).
+2. Set both variables in the MCP server configuration and restart that MCP process:
+
+   ```json
+   "env": {
+     "SNIP_PORT": "5188",
+     "SNIP_PUBLIC_URL": "https://your-exact-share-origin.example"
+   }
+   ```
+
+3. Call `get_connection` and give its full pairing URL to the user. A bb share requires the user's bb login. They choose **connect agent**, then select their video; video bytes remain in that browser.
+
+`SNIP_PUBLIC_URL` must be the exact HTTPS origin, without a path, query, or fragment. The process still binds to `127.0.0.1`. Only that configured public origin and the exact loopback Host/Origin pair used by proxies such as bb are accepted; forwarded headers cannot widen the policy. Tokens and explicit consent are still required. `get_connection` reports `mode`, `browserRequiredOnAgentHost: false`, and connection instructions. This is your agent's bridge behind a tunnel, not a central hosted MCP service at snip.mayank.fyi.
+
+SSH forwarding is an alternative that needs no public URL: forward the same local port (`ssh -L 5188:127.0.0.1:5188 user@vm`) and open the loopback pairing link in your computer's browser. If the tunnel closes, manual editing/export in the loaded tab can continue; reconnect to restore agent commands.
+
+A VM-only unattended render still needs a browser runtime today. For automated testing, `test:agent` launches headless Chromium itself when `CDP_URL` is absent. Install a managed browser with `npx playwright-core install chromium`, or set `CHROMIUM_PATH` to an existing Chrome/Chromium executable. Browser system libraries must be installed on the VM. No desktop, display server, or `agent-browser` dependency is required. A file selected by a headless browser and its export live on that VM; this is distinct from the user-browser flow above.
 
 ## Agent tools
 
@@ -56,12 +78,14 @@ To smoke-test with an eight-second video: split at second 4 and set the second c
 
 ## Checks
 
-Run `npm run test:engine` and `npm run build`. With Chromium running with remote debugging enabled, run the browser/MCP suite:
+Run `npm run test:engine`, `npm run test:bridge`, and `npm run build`. For the browser/MCP suite, install Chromium first or supply `CHROMIUM_PATH`. Set `CDP_URL` only to reuse an already-running browser:
 
 ```sh
 VIDEO_SAMPLE=/path/to/8-second-320x180-with-audio.mp4 \
 FFMPEG_PATH=/path/to/ffmpeg FFPROBE_PATH=/path/to/ffprobe \
-CDP_URL=http://127.0.0.1:19410 npm run test:agent
+npm run test:agent
 ```
 
 It verifies live edits, retries, invalid/stale batches, undo, drag isolation, same-tab reconnect, cancellation, valid MP4/WebM, sub-frame export failure, and repeated decoded video/audio equality. Native FFmpeg/FFprobe are independent test tools only. `npm run test:keyboard` covers existing editor controls and project roundtrips.
+
+Set `SNIP_TEST_PROXY=1` to run that same browser suite through a separate proxy origin with bb-style Host/Origin rewriting. The bridge suite exercises origin/token restrictions and MCP routing without launching a browser.

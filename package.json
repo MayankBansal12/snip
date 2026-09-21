@@ -11,7 +11,8 @@
     "test:keyboard": "node scripts/verify-keyboard-editor.mjs",
     "test:engine": "tsx --test tests/engine.test.ts",
     "test:agent": "node scripts/verify-agent.mjs",
-    "mcp": "node scripts/mcp-server.mjs"
+    "mcp": "node scripts/mcp-server.mjs",
+    "test:bridge": "node --test tests/bridge.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

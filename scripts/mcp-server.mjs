@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Local command bridge only. Source video and exported bytes never pass through it.
+import { acceptsRequest, parsePublicOrigin } from './bridge-origin.mjs';
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, extname, dirname, sep } from 'node:path';
@@ -14,12 +15,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 if (!existsSync(resolve(root, 'index.html'))) throw new Error('Run npm run build before starting the MCP bridge.');
 const token = randomBytes(32).toString('hex');
 const maxPayload = 8 * 1024 * 1024;
-let browser, origin;
+const publicOrigin = parsePublicOrigin(process.env.SNIP_PUBLIC_URL);
+let browser, origin, localOrigin;
 const pending = new Map();
 const contentTypes = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.wasm':'application/wasm', '.woff2':'font/woff2', '.svg':'image/svg+xml', '.png':'image/png', '.txt':'text/plain', '.json':'application/json' };
 const http = createServer((req, res) => {
   // Exact Host and Origin checks prevent DNS rebinding and cross-site control.
-  if (req.headers.host !== new URL(origin).host || (req.headers.origin && req.headers.origin !== origin)) { res.writeHead(403).end(); return; }
+  if (!acceptsRequest(req.headers, localOrigin, publicOrigin)) { res.writeHead(403).end(); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
   let path;
   try { path = decodeURIComponent(new URL(req.url, origin).pathname); } catch { res.writeHead(400).end(); return; }
@@ -33,7 +35,7 @@ const ws = new WebSocketServer({ noServer: true, maxPayload });
 http.on('upgrade', (req, socket, head) => {
   let url;
   try { url = new URL(req.url, origin); } catch { socket.destroy(); return; }
-  if (req.headers.host !== new URL(origin).host || req.headers.origin !== origin || url.pathname !== '/agent' || url.searchParams.get('token') !== token || browser) {
+  if (!acceptsRequest(req.headers, localOrigin, publicOrigin, true) || url.pathname !== '/agent' || url.searchParams.get('token') !== token || browser) {
     socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return;
   }
   ws.handleUpgrade(req, socket, head, client => ws.emit('connection', client));
@@ -58,12 +60,13 @@ await new Promise((resolve, reject) => {
   http.once('error', reject);
   http.listen(Number(process.env.SNIP_PORT || 0), '127.0.0.1', resolve);
 });
-origin = `http://127.0.0.1:${http.address().port}`;
+localOrigin = `http://127.0.0.1:${http.address().port}`;
+origin = publicOrigin || localOrigin;
 const pairingURL = `${origin}/#agent=${token}`;
-console.error(`Snip: open this link on the SAME device as this MCP process, then choose Connect agent:\n${pairingURL}`);
+console.error(`Snip: ${publicOrigin ? 'open this shared link in your browser (the VM needs no browser)' : 'open this link locally, or forward this loopback port to your computer'}, then choose Connect agent:\n${pairingURL}`);
 
 function callBrowser(method, params) {
-  if (browser?.readyState !== WebSocket.OPEN) throw new Error('No editor connected. Use get_connection, open its pairing URL on this device, and choose Connect agent.');
+  if (browser?.readyState !== WebSocket.OPEN) throw new Error('No editor connected. Use get_connection and open the pairing URL in your browser. On a VM, configure SNIP_PUBLIC_URL with a secure tunnel origin or forward the loopback port. No agent-browser is needed.');
   if (pending.size >= 16) throw new Error('Too many pending editor requests.');
   const id = randomUUID(), payload = JSON.stringify({ id, method, params });
   if (Buffer.byteLength(payload) > maxPayload) throw new Error('Request exceeds 8 MiB.');
@@ -88,7 +91,7 @@ const commands = [
 const empty = {type:'object',properties:{},additionalProperties:false};
 const revision = {sessionId:string, revision:{type:'integer',minimum:0}, requestId:string};
 const tools = [
-  {name:'get_connection',description:'Get the local pairing URL. The user must open it on the same computer as this MCP process, connect, and choose a video. No files are opened remotely.',inputSchema:empty},
+  {name:'get_connection',description:'Get the browser pairing URL and setup guidance. For VMs, configure SNIP_PUBLIC_URL with a secure tunnel origin or forward the loopback port. The agent runs here; the user opens the editor in their own browser. No agent-browser or desktop is needed on the VM.',inputSchema:empty},
   {name:'get_project',description:'Read the open browser project, source SHA-256, sessionId, revision, JSON specification, source-time clip ranges and sequence-time timeline. Does not return video bytes.',inputSchema:empty},
   {name:'apply_edits',description:'Atomically apply an undoable batch to the open project. Read get_project first. Times are seconds in the original source; ends are exclusive. Use explicit unique rightClipId for splits. Merge clipId with its following timeline neighbor. Retrying must reuse the exact requestId and payload. Different source clips cannot overlap. At least one clip must remain.',inputSchema:{type:'object',properties:{...revision,commands:{type:'array',items:{oneOf:commands},minItems:1,maxItems:1000}},required:[...Object.keys(revision),'commands'],additionalProperties:false}},
   {name:'start_export',description:'Start fixed-profile FFmpeg export of the current revision in the connected browser. Returns a job immediately. Keep the tab open and poll get_export_status. Output is a browser download, not a server file or remotely accessible URL. Reuse requestId on retries.',inputSchema:{type:'object',properties:revision,required:Object.keys(revision),additionalProperties:false}},
@@ -99,7 +102,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({tools}));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   try {
     if (!tools.some(tool => tool.name === request.params.name)) throw new Error('Unknown tool.');
-    const result = request.params.name === 'get_connection' ? {url:pairingURL,connected:browser?.readyState === WebSocket.OPEN} : await callBrowser(request.params.name, request.params.arguments || {});
+    const result = request.params.name === 'get_connection' ? {url:pairingURL,connected:browser?.readyState === WebSocket.OPEN,mode:publicOrigin?'shared':'loopback',browserRequiredOnAgentHost:false,instructions:publicOrigin?'Open the shared URL in your own browser, connect, and choose a video. Keep that tab open.':'Open the URL on this computer. If the agent is remote, forward this loopback port or restart with SNIP_PUBLIC_URL set to your secure tunnel origin.'} : await callBrowser(request.params.name, request.params.arguments || {});
     return {content:[{type:'text',text:JSON.stringify(result)}]};
   } catch (error) { return {isError:true,content:[{type:'text',text:error.message}]}; }
 });
