@@ -4,7 +4,7 @@ The TypeScript engine validates edit state and applies atomic commands. React pr
 
 ## Agent onboarding and JSON
 
-On the landing page, hover or tap **use snip with your agent** to copy a complete setup prompt with MCP configuration. Editing commands use JSON internally; the editor does not expose a JSON editing panel.
+In the landing page or editor header, hover or tap **use snip with your agent** to copy a complete setup prompt with MCP configuration. Editing commands use JSON internally; the editor does not expose a JSON editing panel.
 
 The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source, edits }`. `source` contains the source SHA-256, byte size, width, height, and decoded duration; all must match the open video. `edits` is the complete version-2 `Edits` structure in `src/types.ts`, with explicit per-clip speed and zoom. Use `get_project` to inspect the specification. Unknown fields, invalid ranges, mismatched sources, and unsupported versions are rejected. JSON is limited to 8 MiB and excludes video bytes; `.snip` files still include the source and remain compatible.
 

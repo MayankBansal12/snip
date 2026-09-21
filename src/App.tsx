@@ -274,10 +274,11 @@ export default function App(){
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
     <input ref={projectInputRef} type="file" id="project-file" accept=".snip" hidden onChange={e => void openFile(e.target.files?.[0],true)} />
     {draggingFile && !busy && <div className="pointer-events-none fixed inset-4 z-50 flex items-center justify-center bg-background/95"><Empty><EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>drop your video or project</EmptyTitle><EmptyDescription>everything stays on this device.</EmptyDescription></EmptyHeader></Empty></div>}
-    {source && <header className="editor-header flex items-center justify-between gap-3 px-3 py-4 sm:px-8 sm:py-5">
+    {source && <header className="editor-header flex flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-8 sm:py-5">
       {brand}
-      <div className="header-actions flex items-center gap-1 sm:gap-2">
+      <div className="header-actions ml-auto flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
         <span className="sr-only" role="status">{loading ? 'opening…' : saved}</span>
+        <AgentOnboarding />
         <span className="hidden sm:contents">{themeButton}</span>
         <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
         <Button aria-label="export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine className="hidden sm:block" />export</Button>

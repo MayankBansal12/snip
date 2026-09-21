@@ -79,7 +79,7 @@ try {
   await page.keyboard.press('Control+Shift+z');assert.equal(await page.locator('.timeline-clip').count(),2);
   project=await call('get_project');assert.deepEqual(project.specification.edits,(await call('get_project')).specification.edits);
   log('An agent batch is one undo step and human undo advances revision');
-  assert.equal(await button('use snip with your agent').count(),0);
+  assert.equal(await button('use snip with your agent').count(),1);
   await button('project menu').click();
   assert.equal(await page.getByRole('menuitem',{name:'edit JSON',exact:true}).count(),0);
   await page.getByRole('menu').focus();await page.keyboard.press('Escape');
