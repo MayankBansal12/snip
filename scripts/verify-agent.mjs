@@ -32,6 +32,32 @@ try {
   await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
   await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
   await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
+  // Reopening a pairing fragment in the same tab must require consent again.
+  await button('agent connected · disconnect').click();
+  await page.goto(pairing.url);await button('connect agent').waitFor();
+  assert.equal(await page.evaluate(()=>location.hash),'');
+  assert.equal((await call('get_connection')).connected,false);
+  await button('connect agent').click();
+  await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
+  await page.getByRole('alertdialog').waitFor({state:'hidden'});
+  log('Same-tab pairing reconnects with explicit consent and clears the token');
+  // Trim handles stop propagation and retain a clip snapshot while dragging.
+  let dragProject=await call('get_project');
+  const handle=await page.getByRole('slider',{name:'Clip 1 start',exact:true}).boundingBox();
+  await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();
+  const dragBatch={sessionId:dragProject.sessionId,revision:dragProject.revision,requestId:'during-drag',commands:[{action:'setSpeed',clipId:dragProject.specification.edits.clips[0].id,speed:3}]};
+  await assert.rejects(()=>call('apply_edits',dragBatch),/pointer interaction/);
+  assert.equal((await call('get_project')).revision,dragProject.revision);
+  await page.mouse.move(handle.x+handle.width/2+40,handle.y+handle.height/2);await page.mouse.up();
+  assert.equal((await call('get_project')).specification.edits.clips[0].speed,1);
+  await button('undo').click();
+  dragProject=await call('get_project');
+  // A rejected drag request did not consume its request ID.
+  await call('apply_edits',{...dragBatch,revision:dragProject.revision});
+  assert.equal((await call('get_project')).specification.edits.clips[0].speed,3);
+  await button('undo').click();
+  assert.equal((await call('get_project')).specification.edits.clips[0].speed,1);
+  log('Trim drags reject agent mutations without consuming revision or request ID');
   const before=await call('get_project');assert(before.specification.source.sha256.length===64);
   const clipId=before.specification.edits.clips[0].id;
   const batch={sessionId:before.sessionId,revision:before.revision,requestId:'edit-1',commands:[
@@ -111,5 +137,19 @@ try {
   log('WebM output settings and mute produce the expected browser export');
   await button('back to editing').click();await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  project=await call('get_project');
+  await call('apply_edits',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-trim',commands:[
+    {action:'deleteClip',clipId:'demo'},
+    {action:'trimClip',clipId,sourceStart:1.001,sourceEnd:1.002},
+    {action:'setSpeed',clipId,speed:2},
+    {action:'setOutput',format:'mp4',muted:false},
+  ]});
+  project=await call('get_project');let unexpectedDownload=false;
+  page.on('download',()=>{unexpectedDownload=true;});
+  await call('start_export',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-export'});
+  let tinyJob;for(let i=0;i<240;i++){tinyJob=await call('get_export_status');if(tinyJob.status!=='running')break;await page.waitForTimeout(250);}
+  assert.equal(tinyJob.status,'failed');assert.match(tinyJob.error,/no readable video/);assert.equal(unexpectedDownload,false);
+  assert.deepEqual((await call('get_project')).specification.edits,project.specification.edits);
+  log('A sub-frame trim cannot report a successful audio-only video export');
   assert.deepEqual(errors,[]);writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2));
 } finally {await client.close();await context.close();await browser.close();}

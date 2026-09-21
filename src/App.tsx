@@ -33,14 +33,23 @@ function initialTheme(){try{return localStorage.getItem('snip-theme')|| (matchMe
 export default function App(){
   const [showJSON,setShowJSON]=useState(false);
   const [agentToken,setAgentToken]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('agent'));
-  useEffect(()=>{if(agentToken)window.history.replaceState(null,'',location.pathname+location.search);},[agentToken]);
+  useEffect(()=>{
+    const readPairingLink=()=>{
+      const token=new URLSearchParams(location.hash.slice(1)).get('agent');
+      if(!token)return;
+      window.history.replaceState(null,'',location.pathname+location.search);
+      setAgentToken(token);
+    };
+    readPairingLink();window.addEventListener('hashchange',readPairingLink);
+    return()=>window.removeEventListener('hashchange',readPairingLink);
+  },[]);
   const [agentStatus,setAgentStatus]=useState('');
   const disconnectAgent=useRef<(()=>void)|null>(null),agentHandler=useRef<AgentHandler>(async()=>{throw new Error('Editor is loading.');});
   const session=useRef(new EditSession(uid())),exportLock=useRef(false),pointerActive=useRef(false);
   const exportJob=useRef<{id:string;sessionId:string;revision:number;status:string;progress:number;name?:string;size?:number;error?:string}|null>(null);
   const exportRequests=useRef(new Set<string>());
   useEffect(()=>()=>disconnectAgent.current?.(),[]);
-  useEffect(()=>{const down=()=>{pointerActive.current=true;},up=()=>{pointerActive.current=false;};window.addEventListener('pointerdown',down);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);window.addEventListener('blur',up);return()=>{window.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);};},[]);
+  useEffect(()=>{const down=()=>{pointerActive.current=true;},up=()=>{pointerActive.current=false;};window.addEventListener('pointerdown',down,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);window.addEventListener('blur',up);return()=>{window.removeEventListener('pointerdown',down,true);window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',up,true);window.removeEventListener('blur',up);};},[]);
   const [actionsOpen,setActionsOpen]=useState(false),[showShortcuts,setShowShortcuts]=useState(false),[showMenu,setShowMenu]=useState(false),[timelineZoom,setTimelineZoom]=useState(1);
   const [source,setSource]=useState<Source|null>(null),[edits,setEdits]=useState<Edits>(()=>defaults(0));
   const editsRef=useRef(edits);editsRef.current=edits;

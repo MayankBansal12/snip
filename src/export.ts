@@ -166,6 +166,14 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
     args.push('-map_metadata','-1','-t',String(duration),'-threads',String(threads),`output.${edits.format}`);
     progress(0,'Exporting your video');
     if(await ffmpeg.exec(args)!==0)throw new Error('This video could not be exported. Try a smaller resolution or MP4.');
+    // A successful encode can still contain only audio when a trim has no video
+    // frame. Decode one tiny frame before acknowledging a playable video export.
+    progress(.98,'Checking the exported video');
+    if(await ffmpeg.exec(['-i',`output.${edits.format}`,'-map','0:v:0','-frames:v','1','-vf','scale=2:2','-pix_fmt','rgb24','-f','rawvideo','check.rgb'])!==0)
+      throw new Error('The export contains no readable video. Extend the clip boundaries and try again.');
+    const frame=await ffmpeg.readFile('check.rgb');
+    if(typeof frame==='string'||frame.byteLength!==12)
+      throw new Error('The export contains no readable video. Extend the clip boundaries and try again.');
     const data=await ffmpeg.readFile(`output.${edits.format}`);
     if(typeof data==='string'||data.byteLength<100)throw new Error('The export was empty. Please try again.');
     progress(1,'Your video is ready');return new Blob([new Uint8Array(data)],{type:`video/${edits.format}`});
