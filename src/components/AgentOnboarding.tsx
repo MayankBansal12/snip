@@ -33,11 +33,11 @@ export default function AgentOnboarding() {
   }
   return <Popover>
     <PopoverTrigger openOnHover delay={150} closeDelay={250} render={<Button variant="ghost" size="sm" className="group text-sm font-normal text-muted-foreground" />}>
-      edit with your agent<ChevronDown className="size-3.5 group-data-popup-open:rotate-180" />
+      use snip with your agent<ChevronDown className="size-3.5 group-data-popup-open:rotate-180" />
     </PopoverTrigger>
     <PopoverPopup align="end" sideOffset={12} className="w-[min(32rem,calc(100vw-2rem))] rounded-2xl shadow-xl/5 motion-reduce:transition-none">
-      <PopoverTitle className="sr-only">edit with your agent</PopoverTitle>
-      <PopoverDescription>Give your agent this prompt to get started.</PopoverDescription>
+      <PopoverTitle className="sr-only">use snip with your agent</PopoverTitle>
+      <PopoverDescription>copy below prompt and pass it to your agent to get started.</PopoverDescription>
       <div className="mt-4 rounded-xl bg-muted/60 p-4 sm:p-5">
         <div id={contentId}>
           {expanded ? <textarea aria-label="full agent prompt" readOnly value={prompt} spellCheck={false} className="block h-[min(22rem,40svh)] w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" />
@@ -50,7 +50,6 @@ export default function AgentOnboarding() {
           <Button size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? 'copied' : 'copy prompt'}</Button>
         </div>
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">MCP setup is included when you copy. Your video stays on your computer.</p>
       <span className="sr-only" role="status">{copied ? 'Full prompt and MCP configuration copied' : ''}</span>
       {error && <p role="alert" className="mt-2 text-sm text-destructive-foreground">{error}</p>}
     </PopoverPopup>
