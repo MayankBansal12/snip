@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && npm run check:server && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:browser": "node scripts/verify.mjs",
     "test:keyboard": "node scripts/verify-keyboard-editor.mjs",
     "test:engine": "tsx --test tests/engine.test.ts",
     "test:agent": "node scripts/verify-agent.mjs",
     "mcp": "node scripts/mcp-server.mjs",
-    "test:bridge": "node --test tests/bridge.test.mjs"
+    "test:bridge": "node --test tests/bridge.test.mjs",
+    "test:chat": "tsx --test tests/chat.test.ts",
+    "check:server": "tsc -p tsconfig.server.json"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -35,6 +37,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.20.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

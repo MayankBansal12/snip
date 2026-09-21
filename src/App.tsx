@@ -5,8 +5,11 @@ import { captureSourceFrame } from './agent-frame';
 import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
 import AgentOnboarding from './components/AgentOnboarding';
+import ChatEditor from './components/ChatEditor';
+import { requestChatEdit } from './chat';
+import { Tabs, TabsList, TabsTab, TabsPanel } from './components/ui/tabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, Film, ListVideo, MessageSquare, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
 import { createPlayback } from './playback';
 import { clearProject, restoreProject, saveEdits, saveProject, saveSource } from './storage';
@@ -43,6 +46,8 @@ export default function App(){
     readPairingLink();window.addEventListener('hashchange',readPairingLink);
     return()=>window.removeEventListener('hashchange',readPairingLink);
   },[]);
+  const [editorMode,setEditorMode]=useState('timeline');
+  const applyBatchRef=useRef<(value:unknown)=>ReturnType<EditSession['apply']>>(()=>{throw new Error('Editor is loading.');});
   const [agentStatus,setAgentStatus]=useState('');
   const [agentBridge,setAgentBridge]=useState('');
   const capturingFrame=useRef(false);
@@ -227,6 +232,26 @@ export default function App(){
     if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
     return source;
   };
+  applyBatchRef.current=(params)=>{
+    const currentSource=ensureEditable();
+    if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying edits.');
+    if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu||agentToken)throw new Error('Close the open dialog, then try the edit again.');
+    const result=session.current.apply(params,editsRef.current,currentSource.duration);
+    if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);}
+    return result;
+  };
+  const submitChat=async(text:string,signal:AbortSignal)=>{
+    const currentSource=ensureEditable(),currentSession=session.current;
+    pausePlayback();
+    const requestId=uid(),revision=currentSession.revision;
+    const result=await requestChatEdit({text,requestId,sessionId:currentSession.sessionId,revision,
+      project:{duration:currentSource.duration,edits:structuredClone(editsRef.current),selectedClip,time}},signal);
+    if(signal.aborted)throw new DOMException('Cancelled','AbortError');
+    if(currentSession!==session.current||revision!==session.current.revision)throw new Error('The timeline changed while Jev was editing. Send your prompt again to use the latest version.');
+    if(result.batch.requestId!==requestId||result.batch.sessionId!==currentSession.sessionId||result.batch.revision!==revision)throw new Error('That edit belongs to an older request. Please try again.');
+    applyBatchRef.current(result.batch);
+    return result.summary;
+  };
   agentHandler.current=async(method,params)=>{
     if(method==='get_export_status')return exportJob.current?{...exportJob.current}:null;
     if(method==='start_export'&&exportJob.current){
@@ -258,10 +283,8 @@ export default function App(){
       return {sessionId:currentSession.sessionId,revision:currentSession.revision,specification:createSpecification(info,plan.edits),timeline:plan.clips,duration:plan.duration,output:plan.output};
     }
     if(method==='apply_edits'){
-      if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying agent edits.');
-      if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu)throw new Error('Close the editor dialog or clip controls before applying agent edits.');
-      const result=session.current.apply(params,editsRef.current,currentSource.duration);
-      if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);setNotice('agent edits applied');}
+      const result=applyBatchRef.current(params);
+      if(!result.duplicate)setNotice('agent edits applied');
       return {sessionId:session.current.sessionId,revision:result.revision,currentRevision:session.current.revision,duplicate:result.duplicate};
     }
     if(method==='start_export'){
@@ -332,7 +355,21 @@ export default function App(){
             <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
         </section>
-        <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
+        <Tabs value={editorMode} onValueChange={value=>{setEditorMode(String(value));setActionsOpen(false);}} className="editor-modes gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <TabsList size="sm" aria-label="editing mode">
+              <TabsTab value="timeline"><ListVideo className="size-3.5" />timeline</TabsTab>
+              <TabsTab value="chat"><MessageSquare className="size-3.5" />chat</TabsTab>
+            </TabsList>
+            <span className="text-xs tabular-nums text-muted-foreground">{edits.clips.length} {edits.clips.length===1?'clip':'clips'}<span className="mx-2 opacity-40">/</span>{formatTime(duration)}</span>
+          </div>
+          <TabsPanel value="timeline" keepMounted className="data-[hidden]:hidden">
+            <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
+          </TabsPanel>
+          <TabsPanel value="chat" keepMounted className="data-[hidden]:hidden">
+            <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
+          </TabsPanel>
+        </Tabs>
       </div>
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}

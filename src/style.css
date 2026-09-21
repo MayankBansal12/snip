@@ -121,3 +121,10 @@ body { text-transform: lowercase; }
   .timeline-actions > button, .timeline-actions > [data-slot=popover-trigger] { padding-inline: 3px; gap: 3px; }
   .timeline-actions svg { width: 12px; height: 12px; }
 }
+
+/* Chat uses the same compact panel and keyboard-first controls as the timeline. */
+.editor-modes [data-slot=tab-indicator] { transition: none; }
+.chat-editor:focus-within { border-color: color-mix(in oklab, var(--primary) 45%, var(--border)); }
+.chat-prompt { min-height: 64px; max-height: 160px; field-sizing: content; }
+.chat-editor button:active:not(:disabled) { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) { .chat-editor button:active:not(:disabled) { transform: none; } }
