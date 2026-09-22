@@ -11,5 +11,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["server", "api", "tests/chat.test.ts"]
+  "include": ["server", "api", "tests/chat.test.ts", "scripts/verify-chat-prompts.ts"]
 }

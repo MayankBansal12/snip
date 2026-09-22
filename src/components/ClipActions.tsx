@@ -5,17 +5,19 @@ import { Button } from './ui/button';
 import { Kbd } from './ui/kbd';
 import { Input } from './ui/input';
 import { Popover, PopoverClose, PopoverPopup, PopoverTitle, PopoverTrigger } from './ui/popover';
+import { zoomFocusLabel } from '../zoom';
 import ZoomArea from './ZoomArea';
 import { clipSpeed, defaultZoom, speedPresets, zoomPresets, MIN_SPEED, MAX_SPEED } from '../types';
 import type { Clip, Edits, Source } from '../types';
 
 type Props = {
   source: Source; videoRef: RefObject<HTMLVideoElement | null>; edits: Edits; selected: string; open: boolean; onOpenChange: (open: boolean) => void;
+  modes?: readonly ('speed' | 'zoom')[]; showFocus?: boolean;
   onChange: (patch: Partial<Clip>, record?: boolean) => void; onCheckpoint: () => void;
 };
 export default function ClipActions(p: Props) {
   const index = p.edits.clips.findIndex(c => c.id === p.selected), clip = p.edits.clips[index];
-  const [kind, setKind] = useState<'speed' | 'zoom'>('speed');
+  const [kind, setKind] = useState<'speed' | 'zoom'>(p.modes?.[0] ?? 'speed');
   const [custom, setCustom] = useState(false), [draft, setDraft] = useState(''), [error, setError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const speed = clip ? clipSpeed(clip, p.edits) : 1, zoom = clip?.zoom ?? defaultZoom;
@@ -31,9 +33,9 @@ export default function ClipActions(p: Props) {
     setCustom(false); setError('');
   };
   return <>
-    {(['speed', 'zoom'] as const).map(mode => <Popover key={mode} open={p.open && kind === mode} onOpenChange={open => { setKind(mode); p.onOpenChange(open); }}>
-      <PopoverTrigger render={<Button size="xs" variant="ghost" />} aria-label={`${mode} ${mode === 'speed' ? speed : zoom.scale}×`}>
-        {mode === 'speed' ? <Gauge /> : <ZoomIn />}<span>{mode} <span className="tabular-nums">{mode === 'speed' ? speed : zoom.scale}×</span></span><Kbd aria-hidden="true" className="hidden sm:inline-flex">{mode === 'speed' ? 'x' : 'z'}</Kbd>
+    {(p.modes ?? ['speed', 'zoom'] as const).map(mode => <Popover key={mode} open={p.open && kind === mode} onOpenChange={open => { setKind(mode); p.onOpenChange(open); }}>
+      <PopoverTrigger render={<Button size="xs" variant="ghost" />} aria-label={`${mode} ${mode === 'speed' ? speed : zoom.scale}×${mode==='zoom'&&p.showFocus?` · ${zoomFocusLabel(zoom)}`:''}`}>
+        {mode === 'speed' ? <Gauge /> : <ZoomIn />}<span>{mode} <span className="tabular-nums">{mode === 'speed' ? speed : zoom.scale}×</span>{mode==='zoom'&&p.showFocus&&<span className="text-muted-foreground"> · {zoomFocusLabel(zoom)}</span>}</span><Kbd aria-hidden="true" className={p.showFocus?'hidden':'hidden sm:inline-flex'}>{mode === 'speed' ? 'x' : 'z'}</Kbd>
       </PopoverTrigger>
       <PopoverPopup onKeyDown={event => {
         if (event.target instanceof Element && event.target.closest('input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;

@@ -1,13 +1,15 @@
 import { applyCommands, normalizeEdits, object } from '../src/engine/index';
 import type { Command } from '../src/engine/index';
 import type { ChatRequest, ChatResult } from '../src/chat';
-import { clipSpeed, sequenceDuration, toSourceTime } from '../src/types';
+import type { Control } from './intent';
+import { zoomFocusLabel } from '../src/zoom';
+import { clipSpeed, defaultZoom, sequenceDuration, toSourceTime } from '../src/types';
 
 export class EditError extends Error {
   constructor(message: string, readonly status = 422) { super(message); }
 }
 type Option<T = unknown> = { description: string; value: T };
-type Question = { type: 'choice'; instructions: string; criteria: Record<string, string> };
+type Question = { type: 'choice'; instructions: { question: string; user_request: string }; criteria: Record<string, string> };
 type Choices = Record<string, Option>;
 const none = { description: 'No change to this setting is requested.', value: null };
 const unknown = { description: 'The requested value or edit is not one of the available options.', value: 'unsupported' };
@@ -43,46 +45,62 @@ export function numbersIn(text: string): number[] {
   return [...new Set(values)].filter(Number.isFinite).slice(0, 12);
 }
 
-export function createPlan(request: ChatRequest) {
+// Keep numbers and directions from separate instructions from leaking into one
+// another. Only split conjunctions followed by a new edit verb; "between 2 and 5"
+// stays intact. Unrecognized wording retains the full request for Jev to infer.
+export function controlText(text: string, control: Control): string {
+  const clauses = text.split(/(?:[,;]\s*|\s+(?:and(?:\s+then)?|then|also)\s+)(?=(?:please\s+)?(?:split|cut|trim|keep|remove|delete|merge|join|reverse|reorder|make|apply|set|move|zoom|focus|pan|mute|unmute|restore|add|export)\b)/i);
+  const markers: Record<Control, RegExp> = {
+    split: /\b(?:split|cut|divide)\b/i, trim: /\b(?:trim|keep|remove|shorten|cut)\b/i,
+    speed: /\b(?:speed|faster|slower|slow|motion)\b/i, zoom: /\b(?:zoom|magnif|focus|pan|closer)\b/i,
+    delete: /\b(?:delete|remove)\b/i, merge: /\b(?:merge|join)\b/i, reorder: /\b(?:reorder|move|reverse)\b/i,
+    muted: /\b(?:mute|unmute|audio|sound|silent)\b/i, format: /\b(?:mp4|webm|format)\b/i,
+    resolution: /\b(?:resolution|\d+p|4k)\b/i, quality: /\b(?:quality|smaller|compact|file size)\b/i,
+  };
+  const matching = clauses.filter(clause => markers[control].test(clause));
+  return matching.length === 1 ? matching[0].trim() : text;
+}
+
+export function createPlan(request: ChatRequest, requested: Control[]) {
   const { edits, time, selectedClip } = request.project;
   const duration = sequenceDuration(edits), numbers = numbersIn(request.text);
   const choices: Record<string, Choices> = {}, questions: Record<string, Question> = {};
   function add(name: string, instructions: string, options: Choices) {
+    const control = name === 'anchor' || name === 'zoomScope' ? 'zoom' : name === 'speedScope' ? 'speed' : name;
+    if (!requested.includes(control as Control)) return;
+    // These controls were explicitly requested, so only their value is in question.
+    options = Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'none'));
     choices[name] = options;
-    questions[name] = { type: 'choice', instructions: `${instructions} Evaluate only the user's request. Do not invent extra edits.`, criteria: Object.fromEntries(Object.entries(options).map(([key, option]) => [key, option.description])) };
+    questions[name] = { type: 'choice', instructions: { question: `${instructions} Evaluate only the user_request provided here. Do not invent extra edits.`, user_request: controlText(request.text, control as Control) }, criteria: Object.fromEntries(Object.entries(options).map(([key, option]) => [key, option.description])) };
   }
   function setting(name: string, instructions: string, values: (string | number | boolean)[], describe: (v: string | number | boolean) => string = String) {
-    add(name, instructions + ' Choose none if this setting is not requested; unsupported if an explicit value is unavailable.', {
+    add(name, instructions + ' This setting IS requested. Choose its matching value; unsupported only if the requested value is unavailable.', {
       none, unsupported: unknown, ...Object.fromEntries([...new Set(values)].map((value, i) => [`v${i}`, { description: describe(value), value }])),
     });
   }
-  add('support', 'Is this a request for supported video edits? Trimming and making a video faster together is supported. Check every clause for unsupported capabilities.', {
-    yes: { description: 'A request using only trim, split, speed, zoom, delete, reorder, merge, mute, format, resolution or quality. Combinations are supported. Natural requests like make it faster, slow motion, and zoom in a little have sensible defaults.', value: true },
-    no: { description: 'Anything else: visual/audio understanding (find silence, boring parts, people), generated media, music, captions, text, transitions, filters, crop/aspect ratio, reversing video playback, saving/downloading/exporting the file, questions/conversation, undo/redo, multiple distinct speeds/zoom values/splits, or ambiguous instructions without a clear edit. Also impossible/out-of-range values.', value: false },
-  });
   const scopes: Choices = {
-    all: { description: 'The entire video / all clips. Default when no specific clip is mentioned.', value: 'all' },
-    selected: { description: 'This clip / selected clip / current clip.', value: 'selected' },
+    all: { description: 'All clips / the whole video. Default when no particular clip is named. Spatial zoom directions like middle, center or top left still use this scope.', value: 'all' },
+    selected: { description: 'Only the selected clip: the user explicitly says this clip, selected clip or current clip.', value: 'selected' },
     first: { description: 'The first clip (after any requested split).', value: 'first' },
     last: { description: 'The last clip (after any requested split).', value: 'last' },
-    unsupported: unknown,
+    unsupported: { description: 'An explicitly stated TIME interval (between 3 and 7 seconds), clip number not listed in these options, or ambiguous clip subset. Spatial middle/center/top/left/right are NOT this option.', value: 'unsupported' },
     ...Object.fromEntries(Array.from({ length: edits.clips.length + 1 }, (_, i) => [`clip${i + 1}`, { description: `Clip number ${i + 1} in the timeline, after any requested split.`, value: i }])),
   };
-  setting('speed', 'What playback speed is requested? "Faster" defaults to 2×; "slow motion" to 0.5×; normal to 1×. These are absolute rates, not zoom.', [.25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 3, 4, ...numbers.filter(n => n >= .25 && n <= 4)], v => `Set playback speed to ${v}×.`);
-  add('speedScope', 'Which clips should receive the SPEED change? A specific time interval within a clip is unsupported; ask for a split first.', scopes);
-  setting('zoom', 'What zoom magnification is requested? "Zoom in"/"closer" defaults to 1.5×, "reset zoom" to 1×. This is not playback speed.', [1, 1.25, 1.5, 2, 3, 4, ...numbers.filter(n => n >= 1 && n <= 4)], v => `Set zoom magnification to ${v}×.`);
-  add('zoomScope', 'Which clips should receive the ZOOM change? A specific time interval within a clip is unsupported; ask for a split first.', scopes);
-  add('anchor', 'Where should a requested zoom focus? Default to center.', Object.fromEntries([
+  setting('speed', 'What playback speed is requested? An explicit rate is absolute. Bare faster/slower are relative to the current rate. Slow motion means 0.5×, normal means 1×. Ignore zoom multipliers.', ['faster', 'slower', .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 3, 4, ...numbers.filter(n => n >= .25 && n <= 4)], v => v === 'faster' ? 'Make it faster without an explicit rate: double current speed, up to 4×.' : v === 'slower' ? 'Make it slower without an explicit rate: halve current speed, down to 0.25×.' : `Set playback speed to ${v}×.`);
+  add('speedScope', 'Which clip number or scope does the user name for SPEED? Do not check clip existence: a requested split happens first, so the new clip is valid. A specific time interval within a clip is unsupported; ask for a split first.', scopes);
+  setting('zoom', 'What zoom magnification is requested? For a POSITION ONLY request (zoom needs to be top left, move the zoom), keep the current scale. Bare zoom in/closer and zoom out are relative. Reset zoom means 1×. Ignore playback speed.', ['keep', 'in', 'out', 1, 1.25, 1.5, 2, 3, 4, ...numbers.filter(n => n >= 1 && n <= 4)], v => v === 'keep' ? 'Only zoom position/focus is requested: keep current zoom (use 1.5× if not yet zoomed).' : v === 'in' ? 'Zoom in / closer without a number: increase current magnification by 1.5×.' : v === 'out' ? 'Zoom out without a number: reduce current magnification by 1.5×.' : `Set zoom magnification to ${v}×.`);
+  add('zoomScope', 'Which clip number or scope does the user name for ZOOM? Do not check clip existence: a requested split happens first, so the new clip is valid. Middle, center, top left, etc. describe a spatial focus, not a time interval. Default all unless a clip is specified. An explicit TIME interval is unsupported; ask for a split first.', scopes);
+  add('anchor', 'Where should the zoom focus spatially? Middle means CENTER of the frame. If position is not mentioned, KEEP existing focus.', { keep: { description: 'No spatial position was requested. Preserve existing focus.', value: null }, ...Object.fromEntries([
     ['center', .5, .5], ['left', 0, .5], ['right', 1, .5], ['top', .5, 0], ['bottom', .5, 1],
     ['top left', 0, 0], ['top right', 1, 0], ['bottom left', 0, 1], ['bottom right', 1, 1],
-  ].map(([description, x, y], i) => [`p${i}`, { description: String(description), value: { x, y } }])));
+  ].map(([description, x, y], i) => [`p${i}`, { description: String(description), value: { x, y } }])) });
   const trims: Choices = { none: { description: 'No time interval is being trimmed or removed. Whole-clip deletion, merging, reordering, speed, zoom and output settings are separate controls.', value: null }, unsupported: { description: 'An explicit trim or time-range removal is requested, but none of these time intervals match it.', value: 'unsupported' } };
   const putTrim = (description: string, start: number, end: number, remove = false) => {
     if (start >= 0 && end <= duration && end > start && (remove ? end - start < duration : start > 0 || end < duration)) trims[`t${Object.keys(trims).length}`] = { description, value: { start, end, remove } };
   };
   const times = [...new Set([0, ...numbers.filter(n => n >= 0 && n <= duration)])];
   for (const n of times) {
-    putTrim(`Remove the first ${n} seconds from the entire timeline.`, n, duration);
+    putTrim(`Remove the first ${n} seconds from the entire timeline. Also the default for bare 'trim ${n} seconds' without a direction.`, n, duration);
     putTrim(`Remove the last ${n} seconds from the entire timeline.`, 0, round(duration - n));
     putTrim(`Keep only the first ${n} seconds of the entire timeline (trim to ${n} seconds).`, 0, n);
     putTrim(`Keep only the last ${n} seconds of the entire timeline.`, round(duration - n), duration);
@@ -91,7 +109,7 @@ export function createPlan(request: ChatRequest) {
       putTrim(`Remove the section from ${n} to ${end} seconds; keep everything before and after.`, n, end, true);
     }
   }
-  add('trim', 'Which exact trim or time-range removal is requested? Deleting, merging or reordering WHOLE CLIPS are separate controls: choose none for those. All times refer to the current edited TIMELINE, not original source time. none if absent. unsupported if these options do not exactly match.', trims);
+  add('trim', 'Which exact trim or time-range removal is requested? Deleting, merging or reordering WHOLE CLIPS are separate controls: choose none for those. All times refer to the current edited TIMELINE, not original source time. A bare "trim N seconds" means remove the first N seconds. "Trim TO N seconds" means keep the first N seconds. unsupported if no interval matches.', trims);
   const splits: Choices = { none, unsupported: unknown };
   for (const n of [...new Set([...numbers, time, duration / 2])].filter(n => n > 0 && n < duration)) splits[`s${Object.keys(splits).length}`] = { description: `Split at ${round(n)} seconds on the current timeline${n === time ? ' (current playhead / here)' : ''}${n === duration / 2 ? ' (halfway)' : ''}.`, value: n };
   add('split', 'Is one split / cut into two clips requested, and at which exact timeline time? A trim/removal alone does not also require a split. none if absent, unsupported if no exact match.', splits);
@@ -109,7 +127,7 @@ export function createPlan(request: ChatRequest) {
   setting('format', 'Is the export file format being set? Do not download the file.', ['mp4', 'webm']);
   setting('resolution', 'Is the output resolution being set?', ['original', '2160', '1440', '1080', '720', '480', '360'], v => v === 'original' ? 'Original resolution' : `${v}p${v === '2160' ? ' / 4K' : ''}`);
   setting('quality', 'Is ENCODING QUALITY or file size being set? Resolution (720p, 1080p, 4K) and format (MP4/WebM) are separate settings: choose none when only those are mentioned.', ['maximum', 'compact'], v => v === 'maximum' ? 'Best / maximum quality' : 'Smaller file / compact export');
-  const state = { user_request: request.text, timeline: edits.clips.map((c, i) => ({ clip: i + 1, selected: c.id === selectedClip, sourceStart: c.start, sourceEnd: c.end, speed: c.speed, zoom: c.zoom })), duration, playhead: time };
+  const state = { planned_controls: requested, target_clip_count_after_split: edits.clips.length + (requested.includes('split') ? 1 : 0), split_happens_before_other_edits: requested.includes('split'), current_timeline: edits.clips.map((c, i) => ({ clip: i + 1, selected: c.id === selectedClip, sourceStart: c.start, sourceEnd: c.end, speed: c.speed, zoom: c.zoom })), duration, playhead: time };
   return { state, questions, choices };
 }
 
@@ -117,14 +135,18 @@ export function compileAnswer(request: ChatRequest, plan: ReturnType<typeof crea
   const answers = object(object(raw).answers);
   let edits = request.project.edits;
   function pick<T>(key: string): T | null {
+    if (!Object.hasOwn(plan.questions, key)) return null;
     const answer = object(answers[key]);
     if (answer.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(plan.choices[key], answer.choice)) throw new EditError('Jev returned an unreadable edit. Please try again.', 502);
     const option = plan.choices[key][answer.choice];
-    if (option.value === 'unsupported') throw new EditError('Try a simpler edit with a clip number and an exact value. Nothing was changed.');
+    if (option.value === 'unsupported') {
+      const hints: Record<string,string> = { split: 'Where should I split? Use a timeline time, such as “split at 4 seconds”.', trim: 'Which section should I trim? Try “remove the first 5 seconds” or “keep 2 to 8 seconds”.', speed: 'Choose a speed from 0.25× to 4×.', zoom: 'Choose a zoom from 1× to 4×, or a position such as top left.', zoomScope: 'Which clip should I zoom? Use a clip number or “the whole video”.', speedScope: 'Which clip should change speed? Use a clip number or “the whole video”.' };
+      throw new EditError(hints[key] || `I couldn’t match the requested ${key} edit. Try a specific clip or value.`);
+    }
     if (typeof answer.confidence !== 'number' || !Number.isFinite(answer.confidence) || (answer.confidence < .3 && !((key==='speedScope'||key==='zoomScope') && edits.clips.length===1 && ['all','selected','first','last','clip1'].includes(answer.choice))) || answer.confidence > 1) throw new EditError('That edit isn’t clear enough yet. Try a clip number and an exact value.');
     return option.value as T | null;
   }
-  if (!pick<boolean>('support')) throw new EditError('Try a trim, split, speed, zoom, mute, or output setting. For example, “make the video 2× faster”.');
+
   const commands: Command[] = [], summaries: string[] = [];
   let serial = 0;
   const newId = () => {
@@ -172,18 +194,24 @@ export function compileAnswer(request: ChatRequest, plan: ReturnType<typeof crea
       }
       for (const part of retained) run({ action: 'trimClip', clipId: part.id, sourceStart: part.start, sourceEnd: part.end });
       for (const clip of [...edits.clips]) if (!retained.some(part => part.id === clip.id)) run({ action: 'deleteClip', clipId: clip.id });
-      summaries.push(trim.remove ? `removed ${trim.start}–${trim.end}s` : `kept ${trim.start}–${trim.end}s`);
+      summaries.push(trim.remove ? `removed ${trim.start}–${trim.end}s` : trim.end === sequenceDuration(request.project.edits) ? `removed first ${trim.start}s` : `kept ${trim.start}–${trim.end}s`);
     }
-    const speed = pick<number>('speed');
+    const speed = pick<number | 'faster' | 'slower'>('speed');
     if (speed !== null) {
-      for (const clip of target(pick<string | number>('speedScope'))) run({ action: 'setSpeed', clipId: clip.id, speed });
-      summaries.push(`speed ${speed}×`);
+      for (const clip of target(pick<string | number>('speedScope'))) run({ action: 'setSpeed', clipId: clip.id, speed: speed === 'faster' ? Math.min(4, clipSpeed(clip, edits) * 2) : speed === 'slower' ? Math.max(.25, clipSpeed(clip, edits) / 2) : speed });
+      summaries.push(typeof speed === 'number' ? `speed ${speed}×` : `playback ${speed}`);
     }
-    const zoom = pick<number>('zoom');
+    const zoom = pick<number | 'keep' | 'in' | 'out'>('zoom');
     if (zoom !== null) {
-      const anchor = pick<{ x: number; y: number }>('anchor')!;
-      for (const clip of target(pick<string | number>('zoomScope'))) run({ action: 'setZoom', clipId: clip.id, zoom: { scale: zoom, ...anchor } });
-      summaries.push(`zoom ${zoom}×`);
+      const anchor = pick<{ x: number; y: number }>('anchor');
+      const clips = target(pick<string | number>('zoomScope'));
+      for (const clip of clips) {
+        const previous = clip.zoom ?? defaultZoom;
+        const scale = zoom === 'keep' ? (previous.scale > 1 ? previous.scale : 1.5) : zoom === 'in' ? Math.min(4, previous.scale * 1.5) : zoom === 'out' ? Math.max(1, previous.scale / 1.5) : zoom;
+        const next = { ...previous, ...anchor, scale };
+        run({ action: 'setZoom', clipId: clip.id, zoom: next });
+        summaries.push(`clip ${edits.clips.findIndex(c => c.id === clip.id) + 1}: zoom ${round(scale)}× · ${zoomFocusLabel(next)}`);
+      }
     }
     for (const kind of ['delete', 'merge'] as const) {
       const scope = pick<string | number>(kind);
@@ -211,5 +239,5 @@ export function compileAnswer(request: ChatRequest, plan: ReturnType<typeof crea
   if (!commands.length || JSON.stringify(edits) === JSON.stringify(request.project.edits)) throw new EditError('The video already matches that edit, or no change was requested.');
   // Revalidate as one batch; callers commit all or nothing and create a single undo step.
   applyCommands(request.project.edits, commands, request.project.duration);
-  return { batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands }, summary: summaries.join(' · ') };
+  return { batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands }, summary: summaries.length > 6 ? summaries.slice(0, 5).join(' · ') + ` · and ${summaries.length - 5} more changes` : summaries.join(' · ') };
 }

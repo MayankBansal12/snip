@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, Redo2, Square, Undo2 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -8,11 +9,11 @@ import IconButton from './IconButton';
 type Props = {
   onSubmit: (text: string, signal: AbortSignal) => Promise<string>;
   onUndo: () => void; onRedo: () => void; canUndo: boolean; canRedo: boolean;
-  active: boolean; revision: number;
+  active: boolean; revision: number; controls: ReactNode;
 };
-const examples = ['make it 2× faster', 'zoom in a little', 'mute the audio'];
+const examples = ['split in half', 'zoom 2× to the top left', 'mute the audio'];
 
-export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo, active, revision }: Props) {
+export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo, active, revision, controls }: Props) {
   const [text, setText] = useState('');
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ message: string; error?: boolean; revision?: number } | null>(null);
@@ -40,7 +41,10 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
   const visibleResult = result && (result.revision === undefined || result.revision === revision) ? result : null;
   return <Card className="chat-editor gap-0 p-3 sm:p-4" render={<section aria-label="edit with chat" />}>
     <form onSubmit={e => { e.preventDefault(); void submit(); }}>
-      <label htmlFor="edit-prompt" className="text-xs font-medium text-muted-foreground">what would you like to change?</label>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <label htmlFor="edit-prompt" className="text-xs font-medium text-muted-foreground">what would you like to change?</label>
+        <div inert={pending} role="group" aria-label="chat clip controls" className="flex items-center gap-1">{controls}</div>
+      </div>
       <textarea id="edit-prompt" ref={input} value={text} maxLength={1200} readOnly={pending} rows={2}
         className="chat-prompt mt-2 block w-full resize-none border-0 bg-transparent px-0 py-1 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/55"
         placeholder="trim the first 2 seconds, then make it faster…"

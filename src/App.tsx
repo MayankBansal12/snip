@@ -6,6 +6,8 @@ import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
+import ClipActions from './components/ClipActions';
+import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from './components/ui/select';
 import { requestChatEdit } from './chat';
 import { Tabs, TabsList, TabsTab, TabsPanel } from './components/ui/tabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -250,6 +252,9 @@ export default function App(){
     if(currentSession!==session.current||revision!==session.current.revision)throw new Error('The timeline changed while Jev was editing. Send your prompt again to use the latest version.');
     if(result.batch.requestId!==requestId||result.batch.sessionId!==currentSession.sessionId||result.batch.revision!==revision)throw new Error('That edit belongs to an older request. Please try again.');
     applyBatchRef.current(result.batch);
+    const affected=result.batch.commands.filter(c=>c.action==='setZoom'||c.action==='setSpeed');
+    const focus=affected.find(c=>c.clipId===selectedClip)??affected[0];
+    if(focus){const index=editsRef.current.clips.findIndex(c=>c.id===focus.clipId);if(index>=0)seek(editsRef.current.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,editsRef.current),0));}
     return result.summary;
   };
   agentHandler.current=async(method,params)=>{
@@ -349,7 +354,7 @@ export default function App(){
     </main> : <main className="editor mx-auto w-full max-w-6xl px-4 pb-6 sm:px-8">
       <div className="workspace" inert={loading || busy}>
         <section ref={previewRef} aria-label="video preview" className="preview-panel">
-          <Preview playing={playing} time={time} editing={actionsOpen} source={source} edits={edits} clip={edits.clips[activeClip.current]} url={url} videoRef={videoRef} onLoaded={() => { const v = videoRef.current; if (v) { v.currentTime = editsRef.current.clips[0].start; v.playbackRate = clipSpeed(editsRef.current.clips[0],editsRef.current); v.muted = editsRef.current.muted; activeClip.current = 0; setTime(0); } }} onToggle={togglePlayback} />
+          <Preview playing={playing} time={time} editing={actionsOpen||(editorMode==='chat'&&!playing)} source={source} edits={edits} clip={edits.clips[activeClip.current]} url={url} videoRef={videoRef} onLoaded={() => { const v = videoRef.current; if (v) { v.currentTime = editsRef.current.clips[0].start; v.playbackRate = clipSpeed(editsRef.current.clips[0],editsRef.current); v.muted = editsRef.current.muted; activeClip.current = 0; setTime(0); } }} onToggle={togglePlayback} />
           <div className="player flex items-center justify-between gap-3 py-4">
             <div className="flex items-center gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><span className="play-time whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{formatTime(time)}</span> / {formatTime(duration)}</span></div>
             <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
@@ -364,10 +369,16 @@ export default function App(){
             <span className="text-xs tabular-nums text-muted-foreground">{edits.clips.length} {edits.clips.length===1?'clip':'clips'}<span className="mx-2 opacity-40">/</span>{formatTime(duration)}</span>
           </div>
           <TabsPanel value="timeline" keepMounted className="data-[hidden]:hidden">
-            <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
+            <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
           </TabsPanel>
           <TabsPanel value="chat" keepMounted className="data-[hidden]:hidden">
-            <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
+            <ChatEditor controls={<>
+              <Select value={selectedClip} items={edits.clips.map((c,i)=>({value:c.id,label:`clip ${i+1}`}))} onValueChange={id=>{const index=edits.clips.findIndex(c=>c.id===id);if(index>=0){setActionsOpen(false);seek(edits.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,edits),0));}}}>
+                <SelectTrigger aria-label="inspect clip" size="sm" className="w-auto min-w-0 border-transparent bg-transparent text-xs shadow-none"><SelectValue /></SelectTrigger>
+                <SelectPopup alignItemWithTrigger={false}>{edits.clips.map((c,i)=><SelectItem key={c.id} value={c.id}>clip {i+1}</SelectItem>)}</SelectPopup>
+              </Select>
+              <ClipActions modes={['zoom']} showFocus source={source} videoRef={videoRef} edits={edits} selected={selectedClip} open={editorMode==='chat'&&actionsOpen} onOpenChange={open=>{if(open)openClipActions(selectedClip);else setActionsOpen(false);}} onChange={changeClip} onCheckpoint={()=>{pausePlayback();checkpoint();}} />
+            </>} key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
           </TabsPanel>
         </Tabs>
       </div>

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { intentQuestions, readIntent } from './intent';
 import { compileAnswer, createPlan, EditError, readRequest } from './planner';
 
 const MAX_BODY = 256 * 1024;
@@ -36,17 +37,22 @@ export async function handleEdit(req: IncomingMessage & { body?: unknown }, res:
     }
     if (Buffer.byteLength(typeof body === 'string' ? body : JSON.stringify(body)) > MAX_BODY) throw new EditError('This project is too large for chat.', 413);
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { throw new EditError('Invalid edit request.', 400); } }
-    const request = readRequest(body), plan = createPlan(request);
-    const response = await (config.fetch ?? fetch)('https://api.typesafe.ai/v1/systemone', {
-      method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.model ?? process.env.TYPESAFE_MODEL ?? 'jev-1.13.0', state: plan.state, questions: plan.questions }), signal: controller.signal,
-    });
-    if (!response.ok) {
-      if (response.status === 429 || response.status === 529) throw new EditError('Jev is busy right now. Try again in a moment.', 503);
-      if (response.status === 401 || response.status === 403) throw new EditError('The Jev connection needs attention. Check the server’s API key.', 503);
-      throw new EditError('Jev couldn’t process that edit. Please try again.', 502);
-    }
-    const result = compileAnswer(request, plan, await response.json());
+    const request = readRequest(body);
+    const evaluate = async (state: unknown, questions: unknown) => {
+      const response = await (config.fetch ?? fetch)('https://api.typesafe.ai/v1/systemone', {
+        method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.model ?? process.env.TYPESAFE_MODEL ?? 'jev-1.13.0', state, questions }), signal: controller.signal,
+      });
+      if (!response.ok) {
+        if (response.status === 429 || response.status === 529) throw new EditError('Jev is busy right now. Try again in a moment.', 503);
+        if (response.status === 401 || response.status === 403) throw new EditError('The Jev connection needs attention. Check the server’s API key.', 503);
+        throw new EditError('Jev couldn’t process that edit. Please try again.', 502);
+      }
+      return response.json();
+    };
+    const intent = readIntent(await evaluate({ user_request: request.text }, intentQuestions()));
+    const plan = createPlan(request, intent);
+    const result = compileAnswer(request, plan, await evaluate(plan.state, plan.questions));
     if (!controller.signal.aborted) send(200, result);
   } catch (error) {
     if (controller.signal.aborted) send(504, { error: 'Jev took too long. Your video hasn’t changed. Try again.' });

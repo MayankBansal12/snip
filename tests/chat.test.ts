@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { applyCommands, normalizeEdits } from '../src/engine/index';
 import { defaults, sequenceDuration } from '../src/types';
-import { compileAnswer, createPlan, numbersIn, readRequest } from '../server/planner';
+import { compileAnswer, createPlan, controlText, numbersIn, readRequest } from '../server/planner';
+import { intentQuestions, readIntent } from '../server/intent';
+import type { Control } from '../server/intent';
 import { handleEdit } from '../server/edit';
 
 function fixture(text = 'make it 2x faster') {
@@ -11,9 +13,11 @@ function fixture(text = 'make it 2x faster') {
   return readRequest({ text, requestId: 'test', sessionId: 'session', revision: 3, project: { duration: 12, edits, selectedClip: 'a', time: 3 } });
 }
 function answer(request: ReturnType<typeof fixture>, overrides: Record<string, unknown> = {}) {
-  const plan = createPlan(request);
+  const dependencies = new Set(['speedScope', 'zoomScope', 'anchor']);
+  const requested = Object.keys(overrides).filter(name => !dependencies.has(name)) as Control[];
+  const plan = createPlan(request, requested);
   const answers = Object.fromEntries(Object.entries(plan.choices).map(([name, options]) => {
-    const value = name in overrides ? overrides[name] : name === 'support' ? true : name.endsWith('Scope') ? 'all' : name === 'anchor' ? { x: .5, y: .5 } : null;
+    const value = name in overrides ? overrides[name] : name.endsWith('Scope') ? 'all' : name === 'anchor' ? { x: .5, y: .5 } : null;
     const choice = Object.entries(options).find(([, option]) => JSON.stringify(option.value) === JSON.stringify(value))?.[0];
     assert(choice, `Missing ${name} option ${JSON.stringify(value)}`);
     return [name, { type: 'choice', choice, confidence: 1 }];
@@ -54,9 +58,7 @@ test('unsupported, low-confidence, forged and invalid multi-edit answers never m
   const { plan, raw } = answer(request, { speed: 2, delete: 'selected' });
   assert.throws(() => compileAnswer(request, plan, raw), /current timeline/);
   assert.deepEqual(request, before);
-  raw.answers.support.choice = 'no';
-  assert.throws(() => compileAnswer(request, plan, raw), /Try a trim/);
-  raw.answers.support.choice = 'yes'; raw.answers.speed.confidence = .1;
+  raw.answers.speed.confidence = .1;
   assert.throws(() => compileAnswer(request, plan, raw), /clear enough/);
   raw.answers.speed.confidence = 1; raw.answers.speed.choice = '__proto__';
   assert.throws(() => compileAnswer(request, plan, raw), /unreadable/);
@@ -66,7 +68,7 @@ test('exact numbers, word numbers, minutes and timecodes become bounded options'
   assert.deepEqual(numbersIn('from 1:02.5 to 2:03, two minutes, half speed'), [62.5, 123, 120, .5]);
   assert.throws(() => readRequest({ ...fixture(), text: 'a'.repeat(1201) }), /incomplete/);
   assert.throws(() => readRequest({ ...fixture(), project: { ...fixture().project, time: Infinity } }), /incomplete/);
-  const plan = createPlan(fixture('0 1 2 3 4 5 6 7 8 9 10 11'));
+  const plan = createPlan(fixture('0 1 2 3 4 5 6 7 8 9 10 11'), ['trim']);
   for (const question of Object.values(plan.questions)) assert(Object.keys(question.criteria).length <= 255);
 });
 
@@ -76,9 +78,12 @@ test('HTTP handler protects credentials, validates requests and sends only text 
     calls++;
     const body = JSON.parse(String(init?.body));
     assert.equal(body.model, 'jev-1.13.0');
-    assert.equal(body.state.user_request, request.text);
+    if (calls === 1) assert.equal(body.state.user_request, request.text);
+    else assert.equal(body.questions.speed.instructions.user_request, request.text);
     assert(!('file' in body.state)); assert(!('name' in body.state));
     assert(!JSON.stringify(body).includes('server-only-test-key'));
+    if (calls === 1) return new Response(JSON.stringify({ answers: Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: name === 'speed' ? .99 : .01 }])) }));
+    assert.deepEqual(Object.keys(body.questions).sort(), ['speed', 'speedScope']);
     const { raw } = answer(request, { speed: 2 });
     return new Response(JSON.stringify(raw));
   }) as typeof fetch }));
@@ -93,6 +98,72 @@ test('HTTP handler protects credentials, validates requests and sends only text 
     const result = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
     assert.equal(result.status, 200); assert.equal(result.headers.get('cache-control'), 'no-store');
     const body = await result.text(); assert(!body.includes('server-only-test-key'));
-    assert.equal(JSON.parse(body).batch.commands[0].speed, 2); assert.equal(calls, 1);
+    assert.equal(JSON.parse(body).batch.commands[0].speed, 2); assert.equal(calls, 2);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+
+test('irrelevant speculative answers cannot block a split or add unwanted changes', () => {
+  const request = fixture('split at 4 seconds');
+  const { plan, raw } = answer(request, { split: 4 });
+  assert.deepEqual(Object.keys(plan.questions), ['split']);
+  raw.answers.trim = { type: 'choice', choice: 'unsupported', confidence: 1 };
+  raw.answers.muted = { type: 'choice', choice: 'v0', confidence: 1 };
+  const result = compileAnswer(request, plan, raw);
+  assert.deepEqual(result.batch.commands.map(c => c.action), ['splitClip']);
+});
+
+test('position-only zoom keeps magnification, preserves clip scope and names the focus', () => {
+  const request = fixture('zoom needs to be in top left side');
+  request.project.edits.clips[0].zoom = { scale: 2, x: .5, y: .5 };
+  const { plan, raw } = answer(request, { zoom: 'keep', zoomScope: 'selected', anchor: { x: 0, y: 0 } });
+  const result = compileAnswer(request, plan, raw);
+  assert.deepEqual(result.batch.commands, [{ action: 'setZoom', clipId: 'a', zoom: { scale: 2, x: 0, y: 0 } }]);
+  assert.match(result.summary, /clip 1: zoom 2× · top left/);
+  request.project.edits.clips[0].zoom.scale = 1;
+  const firstZoom = compileAnswer(request, plan, raw).batch.commands[0];
+  assert.equal(firstZoom.action === 'setZoom' && firstZoom.zoom.scale, 1.5);
+});
+
+test('changing zoom scale preserves an existing focus and bare faster is relative', () => {
+  const request = fixture('make it faster and zoom in');
+  request.project.edits.clips[0].speed = 2;
+  request.project.edits.clips[0].zoom = { scale: 2, x: 0, y: 0 };
+  const { plan, raw } = answer(request, { speed: 'faster', zoom: 'in', anchor: null });
+  const result = applyCommands(request.project.edits, compileAnswer(request, plan, raw).batch.commands, 12);
+  assert.equal(result.clips[0].speed, 4);
+  assert.deepEqual(result.clips[0].zoom, { scale: 3, x: 0, y: 0 });
+});
+
+test('the intent gate rejects unsupported clauses and malformed answers', () => {
+  const raw = { answers: Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: name === 'split' ? .99 : .01 }])) };
+  raw.answers.trim.noul = .5; // An undecided, unrelated control must not veto or mutate a split.
+  assert.deepEqual(readIntent(raw), ['split']);
+  raw.answers.unsupported.noul = .95;
+  assert.throws(() => readIntent(raw), /can’t inspect/);
+  raw.answers.unsupported.noul = .01; raw.answers.split.noul = NaN;
+  assert.throws(() => readIntent(raw), /unreadable/);
+});
+
+
+test('compound clauses keep trim seconds out of zoom scope and preserve numeric ranges', () => {
+  const text = 'trim 5 seconds and apply 2x zoom in middle';
+  assert.equal(controlText(text, 'trim'), 'trim 5 seconds');
+  assert.equal(controlText(text, 'zoom'), 'apply 2x zoom in middle');
+  assert.equal(controlText('keep between 2 and 5 seconds and zoom 2x', 'trim'), 'keep between 2 and 5 seconds');
+  const plan = createPlan(fixture(text), ['trim', 'zoom']);
+  assert.equal(plan.questions.zoomScope.instructions.user_request, 'apply 2x zoom in middle');
+  assert(!('user_request' in plan.state));
+});
+
+test('a bare five-second trim plus centered zoom compiles against the screenshot timeline', () => {
+  const request = fixture('trim 5 seconds and apply 2x zoom in middle');
+  request.project.duration = 50.2;
+  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{id:'a', start:0, end:4}, {id:'b', start:6, end:50.2}] }, 50.2);
+  const { plan, raw } = answer(request, { trim: { start:5, end:48.2, remove:false }, zoom:2, anchor:{x:.5,y:.5} });
+  const result = compileAnswer(request, plan, raw);
+  const edited = applyCommands(request.project.edits, result.batch.commands, 50.2);
+  assert.deepEqual(edited.clips.map(c=>[c.start,c.end,c.zoom]), [[7,50.2,{scale:2,x:.5,y:.5}]]);
+  assert.match(result.summary, /removed first 5s/);
+  assert.match(result.summary, /zoom 2× · center/);
 });
