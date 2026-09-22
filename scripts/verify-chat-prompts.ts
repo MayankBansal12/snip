@@ -6,8 +6,20 @@ import type { Edits } from '../src/types';
 
 const base = () => { const edits = defaults(50.2); edits.clips[0].id = 'a'; return edits; };
 const twoClips = () => ({ ...base(), clips: [{ id:'a', start:0, end:4 }, { id:'b', start:6, end:50.2 }] });
-type Case = { text: string; edits?: Edits; check?: (edits: Edits) => void; rejected?: boolean };
+type Case = { text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
 const cases: Case[] = [
+  { text:'split 3 seconds after', check:e=>assert.equal(e.clips[0].end,10.6) },
+  { text:'split in 3 seconds', check:e=>assert.equal(e.clips[0].end,10.6) },
+  { text:'split three seconds from here', check:e=>assert.equal(e.clips[0].end,10.6) },
+  { text:'cut 3 seconds later', check:e=>assert.equal(e.clips[0].end,10.6) },
+  { text:'split 3 seconds before', check:e=>assert.equal(e.clips[0].end,4.6) },
+  { text:'split here', check:e=>assert.equal(e.clips[0].end,7.6) },
+  { text:'split at 3 seconds', check:e=>assert.equal(e.clips[0].end,3) },
+  { text:'split 3 seconds after', edits:twoClips(), check:e=>assert.equal(e.clips[1].end,12.6) },
+  { text:'split 3 seconds after', time:2, edits:{...base(),clips:[{id:'a',start:14,end:20,speed:2},{id:'b',start:0,end:10,speed:1}]}, check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end,c.speed]),[[14,20,2],[0,2,1],[2,10,1]]) },
+  { text:'split 3 seconds after', time:49, rejected:true, error:/lands at 52s, outside/ },
+  { text:'split 3 seconds before', time:2, rejected:true, error:/lands at -1s, outside/ },
+  { text:'split at 4 seconds and remove the last 2 seconds', check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[0,4],[4,48.2]]) },
   { text:'split at 4 seconds', check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[0,4],[4,50.2]]) },
   { text:'cut at 00:04', check:e=>assert.equal(e.clips[0].end,4) },
   { text:'split in half', check:e=>assert.equal(e.clips[0].end,25.1) },
@@ -28,11 +40,11 @@ for (const [i, item] of cases.entries()) {
   const edits = item.edits ?? base(), start = performance.now();
   const response = await fetch(`${process.env.SNIP_URL || 'http://127.0.0.1:52945'}/api/edit`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:item.text,requestId:`prompt-test-${i}`,sessionId:'live-acceptance',revision:0,project:{duration:50.2,edits,selectedClip:edits.clips[0].id,time:7.6}}),
+    body:JSON.stringify({text:item.text,requestId:`prompt-test-${i}`,sessionId:'live-acceptance',revision:0,project:{duration:50.2,edits,selectedClip:edits.clips[0].id,time:item.time ?? 7.6}}),
   });
   const result=await response.json();
   try {
-    if(item.rejected) assert.equal(response.status,422);
+    if(item.rejected) {assert.equal(response.status,422);if(item.error)assert.match(result.error,item.error);}
     else {assert.equal(response.status,200,JSON.stringify(result));item.check!(applyCommands(edits,result.batch.commands,50.2));}
     console.log(`PASS ${item.text} (${Math.round(performance.now()-start)}ms)${item.edits?' [edited timeline]':''}`);
   } catch(error) {failures++;console.error(`FAIL ${item.text}: ${error instanceof Error?error.message:error}`);}

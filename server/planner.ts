@@ -111,8 +111,20 @@ export function createPlan(request: ChatRequest, requested: Control[]) {
   }
   add('trim', 'Which exact trim or time-range removal is requested? Deleting, merging or reordering WHOLE CLIPS are separate controls: choose none for those. All times refer to the current edited TIMELINE, not original source time. A bare "trim N seconds" means remove the first N seconds. "Trim TO N seconds" means keep the first N seconds. unsupported if no interval matches.', trims);
   const splits: Choices = { none, unsupported: unknown };
-  for (const n of [...new Set([...numbers, time, duration / 2])].filter(n => n > 0 && n < duration)) splits[`s${Object.keys(splits).length}`] = { description: `Split at ${round(n)} seconds on the current timeline${n === time ? ' (current playhead / here)' : ''}${n === duration / 2 ? ' (halfway)' : ''}.`, value: n };
-  add('split', 'Is one split / cut into two clips requested, and at which exact timeline time? A trim/removal alone does not also require a split. none if absent, unsupported if no exact match.', splits);
+  const splitNumbers = numbersIn(controlText(request.text, 'split'));
+  for (const n of [...new Set([...splitNumbers, time, duration / 2])]) splits[`s${Object.keys(splits).length}`] = { description: `Split AT absolute timeline timestamp ${round(n)} seconds, measured from the beginning${n === time ? ' (also current playhead / here)' : ''}${n === duration / 2 ? ' (also halfway through the video)' : ''}. Not an offset from the playhead.`, value: n };
+  // Keep out-of-range offsets available: infer the requested position first,
+  // then report its bounds error instead of silently choosing an absolute time.
+  for (const seconds of splitNumbers.filter(n => n > 0)) {
+    for (const direction of [1, -1]) {
+      const offset = seconds * direction;
+      splits[`s${Object.keys(splits).length}`] = {
+        description: `Split ${seconds} seconds ${direction > 0 ? 'AFTER / later / ahead of / from now' : 'BEFORE / earlier / behind'} the current playhead. Relative offset ${offset}s from playhead ${round(time)}s gives timeline timestamp ${round(time + offset)}s.`,
+        value: { offset },
+      };
+    }
+  }
+  add('split', 'Where should the split happen? “At N seconds” is an absolute timestamp. “N seconds after”, “in N seconds”, “N seconds later/ahead/from here” mean N seconds AFTER the current playhead by default, even without an explicit reference. “N seconds before/earlier/back” means BEFORE the playhead. “Here/now/current timestamp” means the playhead itself. An explicitly named different reference must be respected. Choose the matching semantic option even if its timestamp is outside the video; the editor validates bounds. A trim/removal alone is not a split.', splits);
   const clipOptions: Choices = { none, unsupported: unknown, selected: { description: 'The selected clip.', value: 'selected' }, first: scopes.first, last: scopes.last,
     ...Object.fromEntries(edits.clips.map((_, i) => [`clip${i + 1}`, scopes[`clip${i + 1}`]])) };
   add('delete', 'Is deletion of one WHOLE clip requested? Do not select a clip for a time-range trim/removal. none if absent.', clipOptions);
@@ -140,7 +152,7 @@ export function compileAnswer(request: ChatRequest, plan: ReturnType<typeof crea
     if (answer.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(plan.choices[key], answer.choice)) throw new EditError('Jev returned an unreadable edit. Please try again.', 502);
     const option = plan.choices[key][answer.choice];
     if (option.value === 'unsupported') {
-      const hints: Record<string,string> = { split: 'Where should I split? Use a timeline time, such as “split at 4 seconds”.', trim: 'Which section should I trim? Try “remove the first 5 seconds” or “keep 2 to 8 seconds”.', speed: 'Choose a speed from 0.25× to 4×.', zoom: 'Choose a zoom from 1× to 4×, or a position such as top left.', zoomScope: 'Which clip should I zoom? Use a clip number or “the whole video”.', speedScope: 'Which clip should change speed? Use a clip number or “the whole video”.' };
+      const hints: Record<string,string> = { split: 'Where should I split? Try “split here”, “split 3 seconds after”, or “split at 4 seconds”.', trim: 'Which section should I trim? Try “remove the first 5 seconds” or “keep 2 to 8 seconds”.', speed: 'Choose a speed from 0.25× to 4×.', zoom: 'Choose a zoom from 1× to 4×, or a position such as top left.', zoomScope: 'Which clip should I zoom? Use a clip number or “the whole video”.', speedScope: 'Which clip should change speed? Use a clip number or “the whole video”.' };
       throw new EditError(hints[key] || `I couldn’t match the requested ${key} edit. Try a specific clip or value.`);
     }
     if (typeof answer.confidence !== 'number' || !Number.isFinite(answer.confidence) || (answer.confidence < .3 && !((key==='speedScope'||key==='zoomScope') && edits.clips.length===1 && ['all','selected','first','last','clip1'].includes(answer.choice))) || answer.confidence > 1) throw new EditError('That edit isn’t clear enough yet. Try a clip number and an exact value.');
@@ -163,11 +175,15 @@ export function compileAnswer(request: ChatRequest, plan: ReturnType<typeof crea
     return [clip];
   };
   try {
-    const split = pick<number>('split');
+    const split = pick<number | { offset: number }>('split');
     if (split !== null) {
-      const point = toSourceTime(split, edits), clip = edits.clips[point.index];
+      const position = typeof split === 'number' ? split : round(request.project.time + split.offset);
+      const end = sequenceDuration(edits);
+      if (position <= 0 || position >= end) throw new EditError(`That split lands at ${round(position)}s, outside the video. Choose a point between 0s and ${round(end)}s.`);
+      const point = toSourceTime(position, edits), clip = edits.clips[point.index];
+      if (Math.abs(point.time - clip.start) < 1e-7) throw new EditError(`There’s already a split at ${round(position)}s. Choose another point.`);
       run({ action: 'splitClip', clipId: clip.id, sourceTime: point.time, rightClipId: newId() });
-      summaries.push(`split at ${round(split)}s`);
+      summaries.push(`split at ${round(position)}s${typeof split === 'number' ? '' : ` (${Math.abs(split.offset)}s ${split.offset > 0 ? 'after' : 'before'} the playhead)`}`);
     }
     const trim = pick<{ start: number; end: number; remove: boolean }>('trim');
     if (trim) {

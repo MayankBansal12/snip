@@ -20,7 +20,7 @@ The MCP bridge can run locally or on a headless VM behind an authenticated HTTPS
 
 ## Edit with Jev
 
-Switch from **timeline** to **chat**, type an edit, and press Enter. Try “trim the first 2 seconds”, “split at 4 seconds and make the second clip 2× faster”, or “zoom in a little”. Edits appear immediately and each request is one undo step. Shift+Enter adds a line; Escape cancels a pending request.
+Switch from **timeline** to **chat**, type an edit, and press Enter. Try “trim the first 2 seconds”, “split at 4 seconds and make the second clip 2× faster”, or “zoom in a little”. Edits appear immediately and each request is one undo step. “Split 3 seconds after” splits three seconds after the playhead at the moment you submit; “split 3 seconds before” goes backwards, and “split here” uses the playhead itself. The result shows the resolved timestamp. Shift+Enter adds a line; Escape cancels a pending request.
 
 Chat shows the selected clip’s zoom amount and focus, such as **zoom 2× · top left**. Click it to see the original frame and drag the box to choose what stays in view. Use the clip selector to inspect another clip. “Zoom needs to be in top left side” keeps an existing magnification; without a zoom, it starts at 1.5×. “Trim 5 seconds” removes the first five seconds; “trim to 5 seconds” keeps the first five. The result states the applied edit.
 

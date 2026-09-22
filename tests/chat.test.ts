@@ -8,6 +8,12 @@ import { intentQuestions, readIntent } from '../server/intent';
 import type { Control } from '../server/intent';
 import { handleEdit } from '../server/edit';
 
+function intentAnswer(requested: Control[]) {
+  const answers: Record<string, { type: string; noul?: number; choice?: string; confidence?: number }> = Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: requested.includes(name as Control) ? .99 : .01 }]));
+  answers.timing = { type:'choice', choice:requested.includes('split') ? (requested.includes('trim') ? 'both' : 'split') : requested.includes('trim') ? 'trim' : 'none', confidence:1 };
+  return { answers };
+}
+
 function fixture(text = 'make it 2x faster') {
   const edits = defaults(12); edits.clips[0].id = 'a';
   return readRequest({ text, requestId: 'test', sessionId: 'session', revision: 3, project: { duration: 12, edits, selectedClip: 'a', time: 3 } });
@@ -82,7 +88,7 @@ test('HTTP handler protects credentials, validates requests and sends only text 
     else assert.equal(body.questions.speed.instructions.user_request, request.text);
     assert(!('file' in body.state)); assert(!('name' in body.state));
     assert(!JSON.stringify(body).includes('server-only-test-key'));
-    if (calls === 1) return new Response(JSON.stringify({ answers: Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: name === 'speed' ? .99 : .01 }])) }));
+    if (calls === 1) return new Response(JSON.stringify(intentAnswer(['speed'])));
     assert.deepEqual(Object.keys(body.questions).sort(), ['speed', 'speedScope']);
     const { raw } = answer(request, { speed: 2 });
     return new Response(JSON.stringify(raw));
@@ -136,12 +142,12 @@ test('changing zoom scale preserves an existing focus and bare faster is relativ
 });
 
 test('the intent gate rejects unsupported clauses and malformed answers', () => {
-  const raw = { answers: Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: name === 'split' ? .99 : .01 }])) };
-  raw.answers.trim.noul = .5; // An undecided, unrelated control must not veto or mutate a split.
+  const raw = intentAnswer(['split']);
+  raw.answers.speed.noul = .5; // An undecided, unrelated control must not veto or mutate a split.
   assert.deepEqual(readIntent(raw), ['split']);
   raw.answers.unsupported.noul = .95;
   assert.throws(() => readIntent(raw), /can’t inspect/);
-  raw.answers.unsupported.noul = .01; raw.answers.split.noul = NaN;
+  raw.answers.unsupported.noul = .01; raw.answers.timing.confidence = NaN;
   assert.throws(() => readIntent(raw), /unreadable/);
 });
 
@@ -166,4 +172,57 @@ test('a bare five-second trim plus centered zoom compiles against the screenshot
   assert.deepEqual(edited.clips.map(c=>[c.start,c.end,c.zoom]), [[7,50.2,{scale:2,x:.5,y:.5}]]);
   assert.match(result.summary, /removed first 5s/);
   assert.match(result.summary, /zoom 2× · center/);
+});
+
+
+test('relative splits resolve from the playhead in edited timeline seconds across reordered, sped-up clips', () => {
+  const request = fixture('split 3 seconds after');
+  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{ id: 'a', start: 6, end: 12, speed: 2 }, { id: 'b', start: 0, end: 6, speed: 1 }] }, 12);
+  request.project.time = 2;
+  const { plan, raw } = answer(request, { split: { offset: 3 } });
+  const result = compileAnswer(request, plan, raw);
+  const edited = applyCommands(request.project.edits, result.batch.commands, 12);
+  assert.deepEqual(edited.clips.map(c => [c.start, c.end, c.speed]), [[6, 12, 2], [0, 2, 1], [2, 6, 1]]);
+  assert.equal(sequenceDuration(edited), 9);
+  assert.match(result.summary, /split at 5s \(3s after the playhead\)/);
+});
+
+test('relative before, absolute timestamps and the playhead remain distinct split choices', () => {
+  const request = fixture('split 3 seconds before');
+  request.project.time = 7.6;
+  for (const [split, expected] of [[{ offset: -3 }, 4.6], [3, 3], [7.6, 7.6]] as const) {
+    const { plan, raw } = answer(request, { split });
+    const result = compileAnswer(request, plan, raw);
+    const edited = applyCommands(request.project.edits, result.batch.commands, 12);
+    assert.equal(edited.clips[0].end, expected);
+    assert.equal(edited.clips[1].start, expected);
+  }
+});
+
+test('relative split boundaries never clamp to another timestamp or mutate the original project', () => {
+  for (const [time, offset, position] of [[10, 3, 13], [9, 3, 12], [2, -3, -1], [3, -3, 0]]) {
+    const request = fixture(`split 3 seconds ${offset > 0 ? 'after' : 'before'}`);
+    request.project.time = time;
+    const before = structuredClone(request);
+    const { plan, raw } = answer(request, { split: { offset } });
+    assert.throws(() => compileAnswer(request, plan, raw), new RegExp(`lands at ${position}s, outside`));
+    assert.deepEqual(request, before);
+  }
+  const request = fixture('split 3 seconds after');
+  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{ id:'a', start:0, end:4 }, { id:'b', start:4, end:12 }] }, 12);
+  request.project.time = 1;
+  const { plan, raw } = answer(request, { split: { offset:3 } });
+  assert.throws(() => compileAnswer(request, plan, raw), /already a split at 4s/);
+});
+
+
+test('timing intent distinguishes a split, a trim, and an explicitly requested combination', () => {
+  for (const requested of [['split'], ['trim'], ['split', 'trim'], ['zoom']] as Control[][]) {
+    assert.deepEqual(readIntent(intentAnswer(requested)), requested);
+  }
+  const raw = intentAnswer(['split']);
+  raw.answers.trim = { type:'noul', noul:1 }; // Ignore unrelated/legacy independent answers.
+  assert.deepEqual(readIntent(raw), ['split']);
+  raw.answers.timing.choice = '__proto__';
+  assert.throws(() => readIntent(raw), /unreadable/);
 });

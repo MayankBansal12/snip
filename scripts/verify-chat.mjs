@@ -64,6 +64,19 @@ try {
   await waitSaved(e => e.clips.length === 1);
   console.log('PASS plain split prompt');
 
+  // Read the actual paused video time, even if React's last playback tick differs.
+  await page.locator('.source-window video').evaluate(v => { v.currentTime = 1.25; });
+  await page.waitForFunction(() => { const v = document.querySelector('.source-window video'); return v.currentTime === 1.25 && !v.seeking; });
+  const relativeRequest = page.waitForRequest(r => r.url().endsWith('/api/edit') && r.method() === 'POST');
+  const relativeSplit = await submit('split 3 seconds after');
+  assert.equal((await relativeRequest).postDataJSON().project.time, 1.25);
+  assert.equal(relativeSplit.status, 200, JSON.stringify(relativeSplit.result));
+  await waitSaved(e => e.clips.length === 2 && e.clips[0].end === 4.25 && e.clips[1].start === 4.25);
+  assert.match(await status.innerText(), /split at 4.25s.*3s after the playhead/);
+  await chat.getByRole('button', { name: 'undo', exact: true }).click();
+  await waitSaved(e => e.clips.length === 1);
+  console.log('PASS relative split captures the current playhead and undoes atomically');
+
   const compound = await submit('split at 4 seconds and make the second clip 2x faster');
   assert.equal(compound.status, 200, JSON.stringify(compound.result));
   await waitSaved(e => e.clips.length === 2 && e.clips[1].speed === 2);

@@ -245,9 +245,11 @@ export default function App(){
   const submitChat=async(text:string,signal:AbortSignal)=>{
     const currentSource=ensureEditable(),currentSession=session.current;
     pausePlayback();
+    const playhead=videoRef.current?toSequenceTime(videoRef.current.currentTime,editsRef.current,activeClip.current):time;
+    setTime(playhead);
     const requestId=uid(),revision=currentSession.revision;
     const result=await requestChatEdit({text,requestId,sessionId:currentSession.sessionId,revision,
-      project:{duration:currentSource.duration,edits:structuredClone(editsRef.current),selectedClip,time}},signal);
+      project:{duration:currentSource.duration,edits:structuredClone(editsRef.current),selectedClip,time:playhead}},signal);
     if(signal.aborted)throw new DOMException('Cancelled','AbortError');
     if(currentSession!==session.current||revision!==session.current.revision)throw new Error('The timeline changed while Jev was editing. Send your prompt again to use the latest version.');
     if(result.batch.requestId!==requestId||result.batch.sessionId!==currentSession.sessionId||result.batch.revision!==revision)throw new Error('That edit belongs to an older request. Please try again.');
