@@ -1,5 +1,5 @@
 import { clamp, clipCrop, clipDuration, cropPixels } from './types';
-import type { Edits, Source } from './types';
+import type { ClipZoom, Edits, Source } from './types';
 
 type Viewport = ReturnType<typeof cropPixels>;
 export const ZOOM_TRANSITION_SECONDS = .55;
@@ -47,4 +47,11 @@ export function zoomTransitionFilter(source: Source, edits: Edits, index: number
   const top = `(${y}-${to.y}*${height}/${to.height})`;
   const right = `${left}+W*${width}/${to.width}`, bottom = `${top}+H*${height}/${to.height}`;
   return `perspective=x0='${left}':y0='${top}':x1='${right}':y1='${top}':x2='${left}':y2='${bottom}':x3='${right}':y3='${bottom}':sense=source:eval=frame:interpolation=cubic:enable='lt(t,${duration})'`;
+}
+
+export function zoomFocusLabel(zoom: ClipZoom): string {
+  if (zoom.scale === 1) return 'full frame';
+  const horizontal = zoom.x < .25 ? 'left' : zoom.x > .75 ? 'right' : '';
+  const vertical = zoom.y < .25 ? 'top' : zoom.y > .75 ? 'bottom' : '';
+  return [vertical, horizontal].filter(Boolean).join(' ') || 'center';
 }
