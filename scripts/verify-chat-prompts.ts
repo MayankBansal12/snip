@@ -1,8 +1,8 @@
 // Live acceptance checks. The running Snip server holds the Jev credential.
 import assert from 'node:assert/strict';
-import { applyCommands } from '../src/engine/index';
-import { defaults } from '../src/types';
-import type { Edits } from '../src/types';
+import { applyCommands } from '../src/engine/index.js';
+import { defaults } from '../src/types.js';
+import type { Edits } from '../src/types.js';
 
 const base = () => { const edits = defaults(50.2); edits.clips[0].id = 'a'; return edits; };
 const twoClips = () => ({ ...base(), clips: [{ id:'a', start:0, end:4 }, { id:'b', start:6, end:50.2 }] });

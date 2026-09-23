@@ -1,6 +1,6 @@
-import type { Clip, Edits, Source } from '../types';
-import { canMergeClips, clipDuration, defaultZoom, outputSize } from '../types';
-import { validateEdits } from './validation';
+import type { Clip, Edits, Source } from '../types.js';
+import { canMergeClips, clipDuration, defaultZoom, outputSize } from '../types.js';
+import { validateEdits } from './validation.js';
 
 export const ENGINE_VERSION = 1;
 export const RENDER_PROFILE = 'ffmpeg-wasm-0.12.10-single-v1';

@@ -1,10 +1,10 @@
-import { object, normalizeEdits } from '../src/engine/index';
-import type { ChatRequest, ChatResult } from '../src/chat';
-import { clipDuration, sequenceDuration } from '../src/types';
-import { compileChanges } from './compiler';
-import { EditError, MAX_EDITS } from './operations';
-import type { Change, Target, Time, Trim } from './operations';
-export { EditError } from './operations';
+import { object, normalizeEdits } from '../src/engine/index.js';
+import type { ChatRequest, ChatResult } from '../src/chat.js';
+import { clipDuration, sequenceDuration } from '../src/types.js';
+import { compileChanges } from './compiler.js';
+import { EditError, MAX_EDITS } from './operations.js';
+import type { Change, Target, Time, Trim } from './operations.js';
+export { EditError } from './operations.js';
 
 type Option = { description: string; value: unknown };
 type Choices = Record<string, Option>;

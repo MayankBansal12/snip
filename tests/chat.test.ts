@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
-import { applyCommands, normalizeEdits } from '../src/engine/index';
-import { defaults, sequenceDuration } from '../src/types';
-import { compileAnswer, createPlan, numbersIn, readRequest } from '../server/planner';
-import { compileChanges } from '../server/compiler';
-import type { Change, Time } from '../server/operations';
-import { handleEdit } from '../server/edit';
+import { applyCommands, normalizeEdits } from '../src/engine/index.js';
+import { defaults, sequenceDuration } from '../src/types.js';
+import { compileAnswer, createPlan, numbersIn, readRequest } from '../server/planner.js';
+import { compileChanges } from '../server/compiler.js';
+import type { Change, Time } from '../server/operations.js';
+import { handleEdit } from '../server/edit.js';
 
 function fixture(text='make it 2x faster'){
   const edits=defaults(12);edits.clips[0].id='a';

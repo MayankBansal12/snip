@@ -1,5 +1,5 @@
-import type { Batch } from './engine';
-import type { Edits } from './types';
+import type { Batch } from './engine/index.js';
+import type { Edits } from './types.js';
 
 export type ChatRequest = {
   text: string;
@@ -10,7 +10,7 @@ export type ChatRequest = {
 };
 export type ChatErrorCode = 'INVALID_REQUEST' | 'UNSUPPORTED_EDIT' | 'UNSUPPORTED_VALUE' | 'UNCLEAR_REQUEST' | 'TOO_MANY_EDITS' | 'INVALID_EDIT' | 'NO_CHANGE' | 'INVALID_MODEL_RESPONSE' | 'NOT_CONNECTED' | 'RATE_LIMITED' | 'SERVICE_UNAVAILABLE' | 'TIMEOUT';
 export type ChatFailure = { ok: false; error: { code: ChatErrorCode; message: string } };
-export type ChatResult = { ok: true; batch: Batch; summary: string; changes: import('./edit-plan').Change[] };
+export type ChatResult = { ok: true; batch: Batch; summary: string; changes: import('./edit-plan.js').Change[] };
 
 export async function requestChatEdit(request: ChatRequest, signal: AbortSignal): Promise<ChatResult> {
   const response = await fetch('/api/edit', {

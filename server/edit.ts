@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { ChatErrorCode } from '../src/chat';
-import { compileAnswer, createPlan, EditError, readRequest } from './planner';
+import type { ChatErrorCode } from '../src/chat.js';
+import { compileAnswer, createPlan, EditError, readRequest } from './planner.js';
 
 const MAX_BODY = 256 * 1024;
 let active = 0;

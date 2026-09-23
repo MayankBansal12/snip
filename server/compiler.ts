@@ -1,10 +1,10 @@
-import { applyCommands } from '../src/engine/index';
-import type { Command } from '../src/engine/index';
-import type { ChatRequest, ChatResult } from '../src/chat';
-import { clipDuration, clipSpeed, defaultZoom, sequenceDuration, toSourceTime } from '../src/types';
-import { zoomFocusLabel } from '../src/zoom';
-import { EditError, MAX_EDITS } from './operations';
-import type { Change, Target, Trim } from './operations';
+import { applyCommands } from '../src/engine/index.js';
+import type { Command } from '../src/engine/index.js';
+import type { ChatRequest, ChatResult } from '../src/chat.js';
+import { clipDuration, clipSpeed, defaultZoom, sequenceDuration, toSourceTime } from '../src/types.js';
+import { zoomFocusLabel } from '../src/zoom.js';
+import { EditError, MAX_EDITS } from './operations.js';
+import type { Change, Target, Trim } from './operations.js';
 
 const round = (n: number) => Math.round(n * 1000000) / 1000000;
 
