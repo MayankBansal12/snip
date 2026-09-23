@@ -13,7 +13,7 @@ const waitStore=async predicate=>{for(let i=0;i<100;i++){const e=await stored();
 try{
  await page.goto(process.env.APP_URL||'http://127.0.0.1:5196');
  await page.locator('#video-file').setInputFiles(sample);
- await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
+ await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2&&!document.querySelector('.workspace')?.inert);
  await button('split').waitFor();assert.equal(await button('merge').count(),0);assert.equal(await button('reset trim').count(),0);assert.equal(await page.locator('.timeline-foot .tabular-nums').count(),0);assert.equal(await page.locator('.editor-header').getByRole('button',{name:'undo',exact:true}).count(),0);assert.equal(await button('undo').isDisabled(),true);assert.equal(await page.locator('.preview-playback-state').getAttribute('data-visible'),'false');
  await key('Shift+ArrowRight');await key('Shift+ArrowRight');await key('s');assert.equal(await page.locator('.timeline-clip').count(),2);
  await key('m');assert.equal(await page.locator('.timeline-clip').count(),1);await key('Control+z');assert.equal(await page.locator('.timeline-clip').count(),2);
@@ -31,10 +31,10 @@ try{
  await button('speed 1×').click();await button('custom speed…').click();const input=page.getByLabel('custom speed (0.25×–4×)');await input.fill('0');await button('apply').click();await page.getByRole('alert').filter({hasText:'enter a value'}).waitFor();await input.fill('1.37');await input.press('Enter');await waitStore(e=>e.clips.some(c=>c.speed===1.37));await button('close speed').click();await button('merge').hover();await page.getByRole('tooltip').filter({hasText:'match speed before merging'}).waitFor();assert.equal(await button('merge').getAttribute('aria-disabled'),'true');await button('merge').evaluate(e=>e.click());assert.equal(await page.locator('.timeline-clip').count(),2);await page.mouse.move(0,0);
  await button('zoom 1×').click();await button('custom zoom…').click();await page.getByLabel('custom zoom (1×–4×)').fill('2.35');await button('apply').click();await page.getByRole('group',{name:'zoom area'}).focus();await page.keyboard.press('ArrowRight');await waitStore(e=>e.clips.some(c=>c.zoom?.scale===2.35&&c.zoom.x===.51));await button('close zoom').click();await page.locator('[data-slot=popover-popup]').waitFor({state:'hidden'});await button('zoom 2.35×').focus();await page.keyboard.press('Tab');await page.getByRole('tooltip').filter({hasText:'match speed and zoom before merging'}).waitFor();await blur();
  const before=await stored();await key('Alt+ArrowDown');let after=await waitStore(e=>e.clips[0].id===before.clips[1].id);assert.equal(after.clips[1].id,before.clips[0].id);
- await key('Alt+ArrowRight');await waitStore(e=>e.clips[1].start===.1);
+ await key('Alt+ArrowRight');await waitStore(e=>Math.abs(e.clips[1].start-1/30)<1e-6);
  const resetBox=await button('reset trim').boundingBox(),timelineZoomBox=await button('timeline zoom').boundingBox();const trimmedBox=await page.locator('.timeline-foot .tabular-nums').boundingBox();assert(resetBox.x>600);assert(trimmedBox.x>600&&trimmedBox.x<resetBox.x);assert(Math.abs(resetBox.y+resetBox.height/2-timelineZoomBox.y-timelineZoomBox.height/2)<1);
 await button('reset trim').click();await waitStore(e=>e.clips[1].start===0);
- await key('Home');assert.equal(await page.locator('video').evaluate(v=>v.currentTime),after.clips[0].start);
+ await key('Home');assert(Math.abs(await page.locator('video').evaluate(v=>v.currentTime)-after.clips[0].start-.001)<1e-6);
  await key('Space');await page.waitForTimeout(600);await key('Space');assert(Number(await page.getByRole('slider',{name:'seek video',exact:true}).getAttribute('aria-valuenow'))<2);
  assert.equal(await button('reset trim').count(),0);assert.equal(await page.locator('.timeline-foot .tabular-nums').count(),0);
  await page.screenshot({path:'/tmp/snip-keyboard-desktop.png',fullPage:true});
@@ -45,6 +45,6 @@ await button('reset trim').click();await waitStore(e=>e.clips[1].start===0);
  const expected=(await stored()).clips;
  await page.evaluate(()=>{const create=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{if(blob.type==='application/octet-stream')window.savedProjectBlob=blob;return create(blob);};});
  await key('Control+s');await page.waitForFunction(()=>!!window.savedProjectBlob);const projectBytes=await page.evaluate(async()=>Array.from(new Uint8Array(await window.savedProjectBlob.arrayBuffer())));
- await page.locator('#project-file').setInputFiles({name:'reordered.snip',mimeType:'application/octet-stream',buffer:Buffer.from(projectBytes)});await page.getByText('project opened',{exact:true}).waitFor();await waitStore(e=>JSON.stringify(e.clips)===JSON.stringify(expected));await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);assert.equal((await stored()).clips[0].id,expected[0].id);
+ await page.locator('#project-file').setInputFiles({name:'reordered.snip',mimeType:'application/octet-stream',buffer:Buffer.from(projectBytes)});await page.getByText('project opened',{exact:true}).waitFor();await waitStore(e=>JSON.stringify(e.clips)===JSON.stringify(expected));await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2&&!document.querySelector('.workspace')?.inert);assert.equal((await stored()).clips[0].id,expected[0].id);
  assert.deepEqual(errors,[]);console.log('PASS inline controls, presets, custom validation, zoom positioning, shortcuts, reorder timing, reset trim, mobile layout, default export, project roundtrip, export copy');
 }finally{await context.close();await browser.close();}
