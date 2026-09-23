@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, Redo2, Square, Undo2 } from 'lucide-react';
 import { Button } from './ui/button';
-import { Card } from './ui/card';
 import { Spinner } from './ui/spinner';
 import IconButton from './IconButton';
 
@@ -37,11 +36,11 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
   }
   function cancel() { controller.current?.abort(); controller.current = null; setPending(false); setResult({ message: 'Edit cancelled. Your video hasn’t changed.' }); }
   const visibleResult = result && (result.revision === undefined || result.revision === revision) ? result : null;
-  return <Card className="chat-editor gap-0 p-3" render={<section aria-label="edit with chat" />}>
+  return <section className="chat-editor" aria-label="edit with chat">
     <form className="flex items-end gap-3" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <textarea id="edit-prompt" ref={input} value={text} maxLength={1200} readOnly={pending} rows={1}
         className="chat-prompt block min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/55"
-        placeholder="Describe your edit…" aria-label="what would you like to change?"
+        placeholder="describe your edit…" aria-label="what would you like to change?"
         aria-describedby={pending || visibleResult ? 'chat-status' : undefined}
         onChange={e => { setText(e.target.value); setResult(null); }}
         onKeyDown={e => {
@@ -59,5 +58,5 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
       {pending ? <span className="inline-flex items-center gap-2"><Spinner aria-hidden="true" className="size-3.5" />making your edit…</span>
         : visibleResult ? <span className="inline-flex items-start gap-1.5">{visibleResult.revision !== undefined && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}{visibleResult.message}</span> : null}
     </div>
-  </Card>;
+  </section>;
 }

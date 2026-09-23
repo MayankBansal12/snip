@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { applyCommands, normalizeEdits } from '../src/engine/index';
 import { defaults, sequenceDuration } from '../src/types';
-import { compileAnswer, createPlan, instructionsIn, numbersIn, readRequest } from '../server/planner';
+import { compileAnswer, createPlan, numbersIn, readRequest } from '../server/planner';
 import { compileChanges } from '../server/compiler';
 import type { Change } from '../server/operations';
 import { handleEdit } from '../server/edit';
@@ -15,9 +15,11 @@ function fixture(text='make it 2x faster'){
 function answers(request:ReturnType<typeof fixture>,rows:Record<string,unknown>[]){
   const plan=createPlan(request);
   const raw={answers:Object.fromEntries(Object.keys(plan.questions).map(k=>[k,{type:'choice',choice:'unsupported',confidence:1}]))};
-  raw.answers.support={type:'choice',choice:'supported',confidence:1};
+  raw.answers.status={type:'choice',choice:'ready',confidence:1};
+  raw.answers.count={type:'choice',choice:`n${rows.length}`,confidence:1};
+  for(let i=rows.length+1;i<=8;i++)raw.answers[`edit${i}_action`]={type:'choice',choice:'none',confidence:1};
   for(const [i,row] of rows.entries())for(const [field,value] of Object.entries(row)){
-    const key=`edit${i+1}_${field}`;
+    const key=`edit${i+1}_${field==='target'&&row.action==='split'?'splitTarget':field}`;
     const choice=Object.entries(plan.choices[key]).find(([,v])=>JSON.stringify(v.value)===JSON.stringify(value))?.[0];
     assert(choice,`Missing ${key} option ${JSON.stringify(value)}`);
     raw.answers[key]={type:'choice',choice,confidence:1};
@@ -90,8 +92,21 @@ test('unknown, missing and low-confidence required answers reject the entire res
   raw.answers.edit2_split.choice='__proto__';assert.throws(()=>compileAnswer(request,plan,raw),/unreadable/);
   raw.answers.edit2_split.choice='at0';raw.answers.edit2_split.confidence=.1;assert.throws(()=>compileAnswer(request,plan,raw),/clear enough/);
   delete raw.answers.edit2_split;assert.throws(()=>compileAnswer(request,plan,raw),/incomplete/);
-  raw.answers.support.choice='unsupported';assert.throws(()=>compileAnswer(request,plan,raw),/can’t inspect/);
+  raw.answers.status.choice='unsupported';assert.throws(()=>compileAnswer(request,plan,raw),/can’t inspect/);
   assert.deepEqual(request,before);
+});
+
+test('uncertain target aliases are accepted only when their probability mass produces identical commands',()=>{
+  const request=fixture('split at 4 seconds then zoom the right part 2x');
+  const {plan,raw}=answers(request,[{action:'split',target:'all',split:[{from:'timeline',seconds:4}]},{action:'zoom',target:{split:'latest',side:'right'},zoom:2,focus:null}]);
+  const target=raw.answers.edit2_target as typeof raw.answers.edit2_target & {probabilities:Record<string,number>};
+  target.confidence=.2;target.probabilities={right:.4,clip2:.3,last:.3};
+  const value=applyCommands(request.project.edits,compileAnswer(request,plan,raw).batch.commands,12);
+  assert.deepEqual(value.clips.map(c=>c.zoom?.scale),[1,2]);
+  target.probabilities={right:.6,clip1:.4};
+  assert.throws(()=>compileAnswer(request,plan,raw),{code:'UNCLEAR_REQUEST'});
+  target.probabilities={right:2};
+  assert.throws(()=>compileAnswer(request,plan,raw),{code:'INVALID_MODEL_RESPONSE'});
 });
 
 test('position-only zoom preserves scale, and relative speed/zoom preserve focus',()=>{
@@ -131,19 +146,25 @@ test('new-part references cannot point forward or resurrect a removed clip',()=>
   assert.throws(()=>compileChanges(request,[split(4),{action:'delete',clip:{split:1,side:'right'}},zoom({split:1,side:'right'},2)]),/no longer/);
 });
 
-test('instruction boundaries preserve ranges, numeric lists and elliptical clip targets',()=>{
-  assert.deepEqual(instructionsIn('trim 5 seconds and apply 2x zoom in middle'),['trim 5 seconds','apply 2x zoom in middle']);
-  assert.deepEqual(instructionsIn('keep between 2 and 5 seconds then zoom 2x'),['keep between 2 and 5 seconds','zoom 2x']);
-  assert.deepEqual(instructionsIn('split at 3 and 8 seconds, zoom clip 1 to 2x, clip 2 to 3x'),['split at 3 and 8 seconds','zoom clip 1 to 2x','clip 2 to 3x']);
+test('full prompts go to Jev unchanged with eight ordered answer slots and numeric choices',()=>{
+  const request=fixture('1x zoom and 1x speed for clip 1');
+  const plan=createPlan(request);
+  assert.equal(plan.state.user_request,request.text);
+  assert(!('instructions' in plan.state));assert(!('fragments' in plan));
+  for(let i=1;i<=8;i++)assert(`edit${i}_action` in plan.questions);
+  assert.equal((plan.questions.edit2_action.instructions as {edit_number:number}).edit_number,2);
   assert.deepEqual(numbersIn('from 1:02.5 to 2:03, two minutes, half speed'),[62.5,123,120,.5]);
 });
 
-test('number-led settings share a trailing clip without overriding explicit or sequential targets',()=>{
-  assert.deepEqual(instructionsIn('1x zoom and 1x speed for clip 1'),['1x zoom for clip 1','1x speed for clip 1']);
-  assert.deepEqual(instructionsIn('2x zoom, 0.5x speed on clip 2'),['2x zoom on clip 2','0.5x speed on clip 2']);
-  assert.deepEqual(instructionsIn('normal speed and double zoom for the last clip'),['normal speed for the last clip','double zoom for the last clip']);
-  assert.deepEqual(instructionsIn('zoom clip 1 to 2x and 1x speed for clip 2'),['zoom clip 1 to 2x','1x speed for clip 2']);
-  assert.deepEqual(instructionsIn('zoom 2x then 1x speed for clip 2'),['zoom 2x','1x speed for clip 2']);
+test('model error categories map to stable codes and no incomplete plan can apply',()=>{
+  const request=fixture('zoom 2x and make it faster');
+  const {plan,raw}=answers(request,[{action:'zoom',target:'all',zoom:2,focus:null},{action:'speed',target:'all',speed:2}]);
+  raw.answers.status.choice='unsupported';
+  assert.throws(()=>compileAnswer(request,plan,raw),{code:'UNSUPPORTED_EDIT'});
+  raw.answers.status.choice='unclear';assert.throws(()=>compileAnswer(request,plan,raw),{code:'UNCLEAR_REQUEST'});
+  raw.answers.status.choice='ready';raw.answers.edit2_action.choice='none';
+  assert.throws(()=>compileAnswer(request,plan,raw),{code:'INVALID_MODEL_RESPONSE'});
+  raw.answers.count.choice='too_many';assert.throws(()=>compileAnswer(request,plan,raw),{code:'TOO_MANY_EDITS'});
 });
 
 test('the reported reset prompt changes both controls on clip 1 and leaves clip 2 intact',()=>{
@@ -162,7 +183,6 @@ test('the reported reset prompt changes both controls on clip 1 and leaves clip 
 
 test('oversized requests and plans fail before making partial edits',()=>{
   assert.throws(()=>readRequest({...fixture(),text:'a'.repeat(1201)}),/incomplete/);
-  assert.throws(()=>createPlan(fixture(Array(9).fill('zoom 2x').join(' then '))),/up to 8/);
   assert.throws(()=>compileChanges(fixture(),Array(9).fill(zoom('all',2))),/between 1 and 8/);
   for(const q of Object.values(createPlan(fixture('trim 0 1 2 3 4 5 6 7 8 9 10 11 seconds')).questions))assert(Object.keys(q.criteria).length<=255);
 });
@@ -173,6 +193,7 @@ test('HTTP handler makes exactly one Jev call with scoped questions and returns 
     calls++;const body=JSON.parse(String(init?.body));
     assert.equal(body.state.user_request,request.text);assert.equal(body.state.playhead,3);
     assert('edit1_action' in body.questions);assert('edit1_speed' in body.questions);
+    assert(!('instructions' in body.state));assert('edit8_action' in body.questions);
     assert(!('file' in body.state));assert(!('name' in body.state));assert(!JSON.stringify(body).includes('server-only-test-key'));
     const {raw}=answers(request,[{action:'speed',target:'all',speed:2}]);return new Response(JSON.stringify(raw));
   }) as typeof fetch}));
@@ -181,11 +202,12 @@ test('HTTP handler makes exactly one Jev call with scoped questions and returns 
   try{
     assert.equal((await fetch(url)).status,405);
     assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Sec-Fetch-Site':'cross-site'},body:JSON.stringify(request)})).status,403);
-    assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,400);assert.equal(calls,0);
+    const invalid=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    assert.equal(invalid.status,400);assert.deepEqual(await invalid.json(),{ok:false,error:{code:'INVALID_REQUEST',message:'The edit request is incomplete. Refresh the editor and try again.'}});assert.equal(calls,0);
     const result=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
     assert.equal(result.status,200);assert.equal(result.headers.get('cache-control'),'no-store');
     const body=await result.text();assert(!body.includes('server-only-test-key'));
-    const json=JSON.parse(body);assert.deepEqual(json.changes,[{action:'speed',clip:'all',rate:2}]);assert.equal(json.batch.commands[0].speed,2);assert.equal(calls,1);
+    const json=JSON.parse(body);assert.equal(json.ok,true);assert.deepEqual(json.changes,[{action:'speed',clip:'all',rate:2}]);assert.equal(json.batch.commands[0].speed,2);assert.equal(calls,1);
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
 

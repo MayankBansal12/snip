@@ -144,7 +144,7 @@ export function compileChanges(request: ChatRequest, changes: Change[]): ChatRes
       }
     }
   }catch(error){if(error instanceof EditError)throw error;throw new EditError(`That edit doesn’t fit the current timeline. ${error instanceof Error?error.message:'Check its values.'} Nothing was changed.`);}
-  if(!commands.length||JSON.stringify(edits)===JSON.stringify(request.project.edits))throw new EditError('The video already matches that edit, or no change was requested.');
+  if(!commands.length||JSON.stringify(edits)===JSON.stringify(request.project.edits))throw new EditError('The video already matches that edit, or no change was requested.',422,'NO_CHANGE');
   applyCommands(request.project.edits,commands,request.project.duration);
-  return {changes,batch:{requestId:request.requestId,sessionId:request.sessionId,revision:request.revision,commands},summary:summaries.length>6?summaries.slice(0,5).join(' · ')+` · and ${summaries.length-5} more changes`:summaries.join(' · ')};
+  return {ok:true,changes,batch:{requestId:request.requestId,sessionId:request.sessionId,revision:request.revision,commands},summary:summaries.length>6?summaries.slice(0,5).join(' · ')+` · and ${summaries.length-5} more changes`:summaries.join(' · ')};
 }

@@ -7,7 +7,7 @@ import type { AgentHandler } from './agent-connection';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
 import { requestChatEdit } from './chat';
-import { Tabs, TabsList, TabsTab, TabsPanel } from './components/ui/tabs';
+import { Card } from './components/ui/card';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Film, ListVideo, MessageSquare, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
@@ -360,21 +360,21 @@ export default function App(){
             <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
         </section>
-        <Tabs value={editorMode} onValueChange={value=>{setEditorMode(String(value));setActionsOpen(false);}} className="editor-modes gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <TabsList size="sm" aria-label="editing mode">
-              <TabsTab value="timeline"><ListVideo className="size-3.5" />timeline</TabsTab>
-              <TabsTab value="chat"><MessageSquare className="size-3.5" />chat</TabsTab>
-            </TabsList>
-            <span className="text-xs tabular-nums text-muted-foreground">{edits.clips.length} {edits.clips.length===1?'clip':'clips'}<span className="mx-2 opacity-40">/</span>{formatTime(duration)}</span>
+        <Card className="editor-controls gap-2 p-3" render={<section aria-label="video editor" />}>
+          <div className="flex justify-end">
+            <Button size="xs" variant="ghost" className="text-muted-foreground" aria-controls="editor-view" onClick={()=>{setEditorMode(editorMode==='chat'?'timeline':'chat');setActionsOpen(false);}}>
+              {editorMode==='chat'?<ListVideo />:<MessageSquare />}switch to {editorMode==='chat'?'timeline':'chat'}
+            </Button>
           </div>
-          <TabsPanel value="timeline" keepMounted className="data-[hidden]:hidden">
-            <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
-          </TabsPanel>
-          <TabsPanel value="chat" keepMounted className="data-[hidden]:hidden">
-            <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
-          </TabsPanel>
-        </Tabs>
+          <div id="editor-view">
+            <div hidden={editorMode!=='timeline'}>
+              <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
+            </div>
+            <div hidden={editorMode!=='chat'}>
+              <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
+            </div>
+          </div>
+        </Card>
       </div>
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}

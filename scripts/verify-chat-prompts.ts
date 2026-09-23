@@ -6,12 +6,17 @@ import type { Edits } from '../src/types';
 
 const base = () => { const edits = defaults(50.2); edits.clips[0].id = 'a'; return edits; };
 const twoClips = () => ({ ...base(), clips: [{ id:'a', start:0, end:4 }, { id:'b', start:6, end:50.2 }] });
-type Case = { suite?: 'ordered' | 'numeric'; text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
+type Case = { suite?: 'ordered' | 'numeric' | 'natural'; text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
 const changedClips = () => ({...base(),clips:[
   {id:'a',start:0,end:10,speed:2,zoom:{scale:2,x:.5,y:.5}},
   {id:'b',start:10,end:50.2,speed:3,zoom:{scale:3,x:0,y:0}},
 ]});
 const cases: Case[] = [
+  { suite:'natural', text:'For clip 1: 2x zoom, 0.5x speed', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[2,.5],[1,1]]) },
+  { suite:'natural', text:'Can clip 1 be twice as fast with a 1.5x zoom toward the upper left?', edits:twoClips(), check:e=>{assert.equal(e.clips[0].speed,2);assert.deepEqual(e.clips[0].zoom,{scale:1.5,x:0,y:0});assert.equal(e.clips[1].speed,1);} },
+  { suite:'natural', text:'take two seconds off the beginning and three seconds off the end', check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[2,47.2]]) },
+  { suite:'natural', text:'clip 1 needs 1.3x zoom with playback at 1.7x', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1.3,1.7],[1,1]]) },
+  { suite:'natural', text:'thanks, hello there', rejected:true },
   { suite:'numeric', text:'1x zoom and 1x speed for clip 1', edits:changedClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[3,3]]) },
   { suite:'numeric', text:'2x zoom and 0.5x speed for clip 2', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[2,.5]]) },
   { suite:'numeric', text:'1x speed and 1x zoom for clip 1', edits:changedClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[3,3]]) },
@@ -72,8 +77,8 @@ for (const [i, item] of selected.entries()) {
   });
   const result=await response.json();
   try {
-    if(item.rejected) {assert.equal(response.status,422);if(item.error)assert.match(result.error,item.error);}
-    else {assert.equal(response.status,200,JSON.stringify(result));assert(Array.isArray(result.changes));item.check!(applyCommands(edits,result.batch.commands,50.2));}
+    if(item.rejected) {assert.equal(response.status,422);assert.equal(result.ok,false);assert.equal(typeof result.error.code,'string');if(item.error)assert.match(result.error.message,item.error);}
+    else {assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.ok,true);assert(Array.isArray(result.changes));item.check!(applyCommands(edits,result.batch.commands,50.2));}
     console.log(`PASS ${item.text} (${Math.round(performance.now()-start)}ms)${item.edits?' [edited timeline]':''}`);
   } catch(error) {failures++;console.error(`FAIL ${item.text}: ${error instanceof Error?error.message:error}`);}
 }

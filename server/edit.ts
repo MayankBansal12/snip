@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { ChatErrorCode } from '../src/chat';
 import { compileAnswer, createPlan, EditError, readRequest } from './planner';
 
 const MAX_BODY = 256 * 1024;
@@ -10,14 +11,15 @@ export async function handleEdit(req: IncomingMessage & { body?: unknown }, res:
   const send = (status: number, body: unknown) => {
     if (!res.destroyed) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); }
   };
-  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); send(405, { error: 'Use POST to request an edit.' }); return; }
-  if (!req.headers['content-type']?.startsWith('application/json') || req.headers['sec-fetch-site'] === 'cross-site') { send(403, { error: 'Send edits from the Snip editor.' }); return; }
+  const fail = (status: number, code: ChatErrorCode, message: string) => send(status, { ok: false, error: { code, message } });
+  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); fail(405, 'INVALID_REQUEST', 'Use POST to request an edit.'); return; }
+  if (!req.headers['content-type']?.startsWith('application/json') || req.headers['sec-fetch-site'] === 'cross-site') { fail(403, 'INVALID_REQUEST', 'Send edits from the Snip editor.'); return; }
   const apiKey = config.apiKey ?? process.env.TYPESAFE_API_KEY;
-  if (!apiKey) { send(503, { error: 'Chat isn’t connected yet. Add TYPESAFE_API_KEY on the server to enable Jev.' }); return; }
+  if (!apiKey) { fail(503, 'NOT_CONNECTED', 'Chat isn’t connected yet. Add TYPESAFE_API_KEY on the server to enable Jev.'); return; }
   const now = Date.now(), ip = req.socket.remoteAddress || 'local';
   for (const [key, value] of limits) if (value.until < now) limits.delete(key);
   const limit = limits.get(ip) ?? { count: 0, until: now + 60000 };
-  if (active >= 4 || limit.count >= 30) { res.setHeader('Retry-After', '10'); send(429, { error: 'A few edits are in progress. Try again in a moment.' }); return; }
+  if (active >= 4 || limit.count >= 30) { res.setHeader('Retry-After', '10'); fail(429, 'RATE_LIMITED', 'A few edits are in progress. Try again in a moment.'); return; }
   limit.count++; limits.set(ip, limit); active++;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25000);
@@ -43,9 +45,9 @@ export async function handleEdit(req: IncomingMessage & { body?: unknown }, res:
         body: JSON.stringify({ model: config.model ?? process.env.TYPESAFE_MODEL ?? 'jev-1.13.0', state, questions }), signal: controller.signal,
       });
       if (!response.ok) {
-        if (response.status === 429 || response.status === 529) throw new EditError('Jev is busy right now. Try again in a moment.', 503);
-        if (response.status === 401 || response.status === 403) throw new EditError('The Jev connection needs attention. Check the server’s API key.', 503);
-        throw new EditError('Jev couldn’t process that edit. Please try again.', 502);
+        if (response.status === 429 || response.status === 529) throw new EditError('Jev is busy right now. Try again in a moment.', 503, 'SERVICE_UNAVAILABLE');
+        if (response.status === 401 || response.status === 403) throw new EditError('The Jev connection needs attention. Check the server’s API key.', 503, 'NOT_CONNECTED');
+        throw new EditError('Jev couldn’t process that edit. Please try again.', 502, 'SERVICE_UNAVAILABLE');
       }
       return response.json();
     };
@@ -53,8 +55,8 @@ export async function handleEdit(req: IncomingMessage & { body?: unknown }, res:
     const result = compileAnswer(request, plan, await evaluate(plan.state, plan.questions));
     if (!controller.signal.aborted) send(200, result);
   } catch (error) {
-    if (controller.signal.aborted) send(504, { error: 'Jev took too long. Your video hasn’t changed. Try again.' });
-    else if (error instanceof EditError) send(error.status, { error: error.message });
-    else send(502, { error: 'Couldn’t reach Jev. Your video hasn’t changed. Try again.' });
+    if (controller.signal.aborted) fail(504, 'TIMEOUT', 'Jev took too long. Your video hasn’t changed. Try again.');
+    else if (error instanceof EditError) fail(error.status, error.code, error.message);
+    else fail(502, 'SERVICE_UNAVAILABLE', 'Couldn’t reach Jev. Your video hasn’t changed. Try again.');
   } finally { clearTimeout(timeout); res.off('close', disconnect); active--; }
 }

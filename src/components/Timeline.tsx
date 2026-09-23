@@ -5,7 +5,6 @@ import { Kbd } from './ui/kbd';
 import { Button } from './ui/button';
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from './ui/menu';
 import { Tooltip, TooltipPopup, TooltipTrigger } from './ui/tooltip';
-import { Card } from './ui/card';
 import ClipActions from './ClipActions';
 import IconButton from './IconButton';
 import { mergeBlockReason, canMergeClips, trimBounds, clamp, clipDuration, clipSpeed, formatTime, sequenceDuration, toSequenceTime, toSourceTime } from '../types';
@@ -49,7 +48,7 @@ export default function Timeline({videoRef,zoom,onZoom,source,edits,time,selecte
     ...(selectedIndex<edits.clips.length-1?[`next clip: ${mergeBlockReason(edits.clips[selectedIndex],edits.clips[selectedIndex+1],edits)}`]:[]),
   ];
   let offset=0;
-  return <Card render={<section aria-label="video timeline" />} className="timeline">
+  return <section aria-label="video timeline" className="timeline">
     <div className="timeline-toolbar mb-3 flex items-center justify-between gap-2">
       <div className="timeline-actions flex items-center gap-1"><Button size="xs" variant="ghost" disabled={!canSplit} onClick={onSplit} aria-keyshortcuts="S"><Scissors />split<Kbd aria-hidden="true" className="hidden sm:inline-flex">s</Kbd></Button><ClipActions source={source} videoRef={videoRef} edits={edits} selected={selected} open={actionsOpen} onOpenChange={onActionsOpen} onChange={onChangeClip} onCheckpoint={onCheckpoint} /></div>
       <div className="timeline-actions flex shrink-0 items-center gap-1">
@@ -75,5 +74,5 @@ export default function Timeline({videoRef,zoom,onZoom,source,edits,time,selecte
     <div className="timeline-foot flex items-center justify-between gap-2">
       <div className="ml-auto flex items-center gap-2">{trimmed>1e-7 && <><span className="tabular-nums">{formatTime(trimmed)} trimmed</span><Button size="xs" variant="ghost" disabled={!edits.clips.some(c=>{const b=trimBounds(edits.clips,c,source.duration);return c.start>b.start+.001||c.end<b.end-.001;})} onClick={onResetTrim}><RotateCcw />reset trim</Button></>}<Menu><MenuTrigger render={<IconButton label="timeline zoom" size="icon-xs"><ZoomIn /></IconButton>} /><MenuPopup side="top" align="end"><MenuRadioGroup value={String(zoom)} onValueChange={value => onZoom(Number(value))}>{[1,2,4,8].map(level => <MenuRadioItem closeOnClick key={level} value={String(level)}>{level === 1 ? 'fit timeline' : `${level}× closer`}</MenuRadioItem>)}</MenuRadioGroup></MenuPopup></Menu></div>
     </div>
-  </Card>;
+  </section>;
 }

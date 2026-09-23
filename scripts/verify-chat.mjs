@@ -42,12 +42,22 @@ try {
   await page.getByRole('button', { name: 'select your video', exact: true }).waitFor();
   await page.locator('#video-file').setInputFiles(sample);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
-  await page.getByRole('tab', { name: 'chat', exact: true }).click();
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   assert.equal(await chat.getByRole('button').count(), 3);
   assert.equal(await chat.getByRole('combobox').count(), 0);
   assert(!/powered by|prompt and edit settings|what would you like to change/.test(await chat.innerText()));
   assert((await chat.boundingBox()).height < 90);
   await page.screenshot({ path: `${output}/desktop.png`, fullPage: true });
+  const panel = page.getByRole('region', {name:'video editor',exact:true});
+  assert.equal(await page.getByRole('tablist').count(),0);
+  assert.equal(await panel.locator('[data-slot=card]').count(),0);
+  const panelBounds=await panel.boundingBox(), switchBounds=await panel.getByRole('button',{name:'switch to timeline'}).boundingBox();
+  assert(switchBounds.x>panelBounds.x+panelBounds.width/2 && switchBounds.y<panelBounds.y+40);
+  await prompt.fill('draft survives switching');
+  await page.getByRole('button',{name:'switch to timeline',exact:true}).click();
+  await page.getByRole('button',{name:'switch to chat',exact:true}).click();
+  assert.equal(await prompt.inputValue(),'draft survives switching');
+  await prompt.fill('');
   const original = await saved();
   const fast = await submit('make the video 2x faster');
   assert.equal(fast.status, 200, JSON.stringify(fast.result));
@@ -84,9 +94,9 @@ try {
   const compound = await submit('split at 4 seconds and make the second clip 2x faster');
   assert.equal(compound.status, 200, JSON.stringify(compound.result));
   await waitSaved(e => e.clips.length === 2 && e.clips[1].speed === 2);
-  await page.getByRole('tab', { name: 'timeline', exact: true }).click();
+  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
   assert.equal(await page.locator('.timeline-clip').count(), 2);
-  await page.getByRole('tab', { name: 'chat', exact: true }).click();
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await chat.getByRole('button', { name: 'undo', exact: true }).click();
   await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1);
   console.log('PASS compound edit is reflected in timeline and undone atomically');
@@ -96,9 +106,9 @@ try {
   assert.deepEqual(ordered.result.changes.map(c => c.action), ['split','zoom','speed','split','zoom']);
   const planned = await waitSaved(e => e.clips.length === 3 && e.clips[2].zoom?.scale === 3);
   assert.deepEqual(planned.clips.map(c => [c.start,c.end,c.speed,c.zoom?.scale]), [[0,2,1,1.5],[2,6,2,1],[6,8,2,3]]);
-  await page.getByRole('tab', {name:'timeline',exact:true}).click();
+  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
   assert.equal(await page.locator('.timeline-clip').count(),3);
-  await page.getByRole('tab', {name:'chat',exact:true}).click();
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await chat.getByRole('button', {name:'undo',exact:true}).click();
   await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1 && (e.clips[0].zoom?.scale ?? 1) === 1);
   await chat.getByRole('button', {name:'redo',exact:true}).click();
@@ -128,7 +138,7 @@ try {
   assert.equal(positioned.status, 200, JSON.stringify(positioned.result));
   await waitSaved(e => e.clips[0].zoom.scale === 2 && e.clips[0].zoom.x === 0 && e.clips[0].zoom.y === 0);
   assert.equal(await page.locator('.source-window video').evaluate(v => v.style.transform), 'scale(2, 2) translate(0%, 0%)');
-  await page.getByRole('tab', {name:'timeline',exact:true}).click();
+  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
   const zoomButton = page.getByRole('button', { name: 'zoom 2×', exact: true });
   await zoomButton.click();
   const area = page.getByRole('group', { name: 'zoom area', exact: true });
@@ -142,7 +152,7 @@ try {
   await waitSaved(e => e.clips[0].zoom.x === 1 && e.clips[0].zoom.y === 1);
   await page.screenshot({path:`${output}/zoom-focus.png`,fullPage:true});
   await page.getByRole('button', {name:'close zoom',exact:true}).click();
-  await page.getByRole('tab', {name:'chat',exact:true}).click();
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await chat.getByRole('button', {name:'undo',exact:true}).click();
   await waitSaved(e => e.clips[0].zoom.x === 0 && e.clips[0].zoom.y === 0);
   await chat.getByRole('button', {name:'undo',exact:true}).click();
@@ -152,7 +162,7 @@ try {
   console.log('PASS exact trim/zoom prompts, visible focus, crop-box adjustment and one-step undo');
 
   const rejected = await submit('mute the audio and add subtitles');
-  assert.equal(rejected.status, 422);
+  assert.equal(rejected.status, 422);assert.equal(rejected.result.ok,false);assert.equal(rejected.result.error.code,'UNSUPPORTED_EDIT');
   assert.equal((await saved()).muted, original.muted);
   assert.equal(await prompt.inputValue(), 'mute the audio and add subtitles');
   console.log('PASS unsupported combined request changes nothing and retains prompt');
@@ -162,13 +172,13 @@ try {
   await page.route('**/api/edit', async route => {
     const request = route.request().postDataJSON();
     await new Promise(resolve => { release = resolve; intercepted(); });
-    await route.fulfill({ json: { batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands: [{ action: 'setSpeed', clipId: request.project.selectedClip, speed: 3 }] }, summary: 'speed 3×' } });
+    await route.fulfill({ json: { ok:true, changes:[{action:'speed',clip:'selected',rate:3}], batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands: [{ action: 'setSpeed', clipId: request.project.selectedClip, speed: 3 }] }, summary: 'speed 3×' } });
   });
   await prompt.fill('make it 3x faster'); await prompt.press('Enter'); await ready;
-  await page.getByRole('tab', { name: 'timeline', exact: true }).click();
+  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
   await page.getByRole('button', { name: 'mute video', exact: true }).click();
   release();
-  await page.getByRole('tab', { name: 'chat', exact: true }).click();
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await status.getByText(/timeline changed/).waitFor();
   assert.equal((await saved()).clips[0].speed, 1); assert.equal((await saved()).muted, true);
   await page.unroute('**/api/edit');
@@ -178,7 +188,7 @@ try {
   const cancelIntercept = new Promise(resolve => cancelReady = resolve);
   await page.route('**/api/edit', async route => {
     await new Promise(resolve => { release = resolve; cancelReady(); });
-    await route.fulfill({ status: 503, json: { error: 'late response' } }).catch(() => {});
+    await route.fulfill({ status: 503, json: { ok:false, error: {code:'SERVICE_UNAVAILABLE',message:'late response'} } }).catch(() => {});
   });
   await prompt.fill('make it 3x faster'); await prompt.press('Enter'); await cancelIntercept;
   await page.getByRole('button', { name: 'cancel edit', exact: true }).click(); release();
@@ -186,15 +196,19 @@ try {
   await page.unroute('**/api/edit');
   console.log('PASS cancellation preserves video and prompt');
 
-  await page.route('**/api/edit', route => route.fulfill({ status: 503, json: { error: 'Jev is busy right now. Try again in a moment.' } }));
+  await page.route('**/api/edit', route => route.fulfill({ status: 503, json: { ok:false, error: {code:'SERVICE_UNAVAILABLE',message:'Jev is busy right now. Try again in a moment.'} } }));
   await submit('mute the audio'); assert.match(await status.innerText(), /jev is busy/i);
   await page.unroute('**/api/edit');
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.screenshot({ path: `${output}/mobile.png`, fullPage: true });
   await page.evaluate(() => { localStorage.setItem('snip-theme', 'dark'); });
-  await page.reload(); await page.getByRole('tab', { name: 'chat', exact: true }).click();
+  await page.reload(); await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await page.screenshot({ path: `${output}/mobile-dark.png`, fullPage: true });
+  await page.getByRole('button',{name:'switch to timeline',exact:true}).click();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.screenshot({path:`${output}/mobile-timeline.png`,fullPage:true});
+  await page.getByRole('button',{name:'switch to chat',exact:true}).click();
   assert.equal(await chat.getByRole('button').count(), 3);
   assert((await chat.boundingBox()).height < 90);
   await prompt.fill('1x zoom and 1x speed for clip 1');
