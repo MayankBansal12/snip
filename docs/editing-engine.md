@@ -1,6 +1,6 @@
 # JSON editing and local MCP
 
-The TypeScript engine validates edit state and applies atomic commands. React previews that state; browser FFmpeg renders a snapshot. Video bytes stay in the browser.
+The TypeScript engine validates edit state and applies atomic commands. React previews that state; browser FFmpeg renders a snapshot. Full videos and exports stay in the browser; requested frame screenshots are shared with the agent.
 
 ## Agent onboarding and JSON
 
@@ -34,7 +34,7 @@ Configure your stdio MCP client, replacing the absolute path:
 }
 ```
 
-Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status, not video. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. The default URL is loopback-only; use the remote setup below when the agent runs elsewhere. Transfer projects between origins using `.snip` files.
+Call `get_connection`, open its pairing URL, choose **connect agent**, and select a local video. The bridge serves the built editor on loopback and carries edit metadata/status and requested frame screenshots, not full video files. It accepts one paired tab, checks Host/Origin, and requires a random token and explicit consent. Reopen the pairing URL to reconnect. `SNIP_PORT` is optional; a fixed port preserves the browser storage origin between restarts. Use `node` directly so npm logs do not corrupt stdio. The default URL is loopback-only; use the remote setup below when the agent runs elsewhere. Transfer projects between origins using `.snip` files.
 
 ## Remote agents and headless VMs
 
@@ -60,7 +60,8 @@ A VM-only unattended render still needs a browser runtime today. For automated t
 
 ## Agent tools
 
-- `get_connection`: pairing URL and connection status.
+- `get_connection`: pairing URL, unique bridge ID, and connection status. Keep the same MCP process for pairing and edits; another process has its own token and connection. The disconnect button is available on both screens; its tooltip identifies the bridge. Heartbeats clear stale connection state after a lost connection.
+- `get_frame`: original-source JPEG at `sourceTime` (seconds), with `sessionId` and `revision` from `get_project`. Returns an MCP image up to 1280px plus dimensions/time metadata, without moving playback. It does not include edits or overlays; the pairing dialog discloses that requested frames are shared.
 - `get_project`: session ID, revision, specification, source/sequence timeline, duration, and output dimensions.
 - `apply_edits`: `{ sessionId, revision, requestId, commands }`. Supported actions: `splitClip`, `trimClip`, `setSpeed`, `setZoom`, `deleteClip`, `mergeClips`, `reorderClips`, `setOutput`. Tool discovery provides full schemas. Splits require an explicit unique `rightClipId`; merge joins the next timeline neighbor. A batch is one undo step.
 - `start_export`: `{ sessionId, revision, requestId }`; returns a job immediately.

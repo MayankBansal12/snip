@@ -50,10 +50,20 @@ test('headless MCP serves a shared pairing URL and routes edits through the auth
     await rejected('https://evil.example');await rejected(shared,'0'.repeat(64));
     browser=new WebSocket(`${upstream.replace('http:','ws:')}/agent?token=${token}`,{origin:shared});
     await new Promise((resolve,reject)=>{browser.once('open',resolve);browser.once('error',reject);});
-    browser.on('message',bytes=>{const request=JSON.parse(bytes);browser.send(JSON.stringify({id:request.id,result:{method:request.method,params:request.params}}));});
+    browser.on('message',bytes=>{const request=JSON.parse(bytes);if(request.type)return;browser.send(JSON.stringify({id:request.id,result:{method:request.method,params:request.params}}));});
     assert.equal((await call('get_connection')).connected,true);
+    assert.equal(typeof pairing.bridgeId,'string');
     const batch={sessionId:'s',revision:0,requestId:'r',commands:[{action:'setSpeed',clipId:'c',speed:2}]};
     assert.deepEqual(await call('apply_edits',batch),{method:'apply_edits',params:batch});
     await rejected(shared); // a second paired browser is not allowed
+    const other=new Client({name:'other-agent',version:'1.0.0'});
+    try {
+      await other.connect(new StdioClientTransport({command:process.execPath,args:['scripts/mcp-server.mjs'],env:{...process.env,SNIP_PORT:'0',SNIP_PUBLIC_URL:''},stderr:'pipe'}));
+      const connection=JSON.parse((await other.callTool({name:'get_connection',arguments:{}})).content[0].text);
+      assert.notEqual(connection.bridgeId,pairing.bridgeId);assert.equal(connection.connected,false);
+      const error=await other.callTool({name:'get_project',arguments:{}});
+      assert(error.isError);assert(error.content[0].text.includes(connection.bridgeId));
+      assert.equal((await call('get_connection')).connected,true);
+    } finally {await other.close();}
   } finally {browser?.terminate();await client.close();}
 });

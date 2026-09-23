@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local command bridge only. Source video and exported bytes never pass through it.
+// Command bridge; requested frame images may pass through, full videos and exports do not.
 import { acceptsRequest, parsePublicOrigin } from './bridge-origin.mjs';
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -13,6 +13,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 if (!existsSync(resolve(root, 'index.html'))) throw new Error('Run npm run build before starting the MCP bridge.');
+const bridgeId = randomUUID();
 const token = randomBytes(32).toString('hex');
 const maxPayload = 8 * 1024 * 1024;
 const publicOrigin = parsePublicOrigin(process.env.SNIP_PUBLIC_URL);
@@ -42,9 +43,11 @@ http.on('upgrade', (req, socket, head) => {
 });
 ws.on('connection', client => {
   browser = client;
+  client.send(JSON.stringify({type:'ready',bridgeId}));
   client.on('error', () => {});
   client.on('message', data => {
     let message; try { message = JSON.parse(data.toString()); } catch { client.close(1007); return; }
+    if(message?.type==='ping'){client.send(JSON.stringify({type:'pong'}));return;}
     if (!message || typeof message.id !== 'string') return;
     const request = pending.get(message.id); if (!request) return;
     pending.delete(message.id); clearTimeout(request.timeout);
@@ -66,7 +69,7 @@ const pairingURL = `${origin}/#agent=${token}`;
 console.error(`Snip: ${publicOrigin ? 'open this shared link in your browser (the VM needs no browser)' : 'open this link locally, or forward this loopback port to your computer'}, then choose Connect agent:\n${pairingURL}`);
 
 function callBrowser(method, params) {
-  if (browser?.readyState !== WebSocket.OPEN) throw new Error('No editor connected. Use get_connection and open the pairing URL in your browser. On a VM, configure SNIP_PUBLIC_URL with a secure tunnel origin or forward the loopback port. No agent-browser is needed.');
+  if (browser?.readyState !== WebSocket.OPEN) throw new Error(`No editor connected to bridge ${bridgeId} at ${origin}. A tab connected to another bridge is not connected to this process. Use get_connection and open the pairing URL in your browser. On a VM, configure SNIP_PUBLIC_URL with a secure tunnel origin or forward the loopback port. No agent-browser is needed.`);
   if (pending.size >= 16) throw new Error('Too many pending editor requests.');
   const id = randomUUID(), payload = JSON.stringify({ id, method, params });
   if (Buffer.byteLength(payload) > maxPayload) throw new Error('Request exceeds 8 MiB.');
@@ -93,6 +96,7 @@ const revision = {sessionId:string, revision:{type:'integer',minimum:0}, request
 const tools = [
   {name:'get_connection',description:'Get the browser pairing URL and setup guidance. For VMs, configure SNIP_PUBLIC_URL with a secure tunnel origin or forward the loopback port. The agent runs here; the user opens the editor in their own browser. No agent-browser or desktop is needed on the VM.',inputSchema:empty},
   {name:'get_project',description:'Read the open browser project, source SHA-256, sessionId, revision, JSON specification, source-time clip ranges and sequence-time timeline. Does not return video bytes.',inputSchema:empty},
+  {name:'get_frame',description:'Inspect a JPEG screenshot at sourceTime (seconds in the ORIGINAL video, not edited timeline). Read get_project first and pass sessionId/revision. Returns an MCP image, maximum 1280px; no crop, zoom, filters or overlays applied. Does not move user playback. Requested frames are shared with the agent.',inputSchema:{type:'object',properties:{sessionId:string,revision:{type:'integer',minimum:0},sourceTime:{type:'number',minimum:0}},required:['sessionId','revision','sourceTime'],additionalProperties:false}},
   {name:'apply_edits',description:'Atomically apply an undoable batch to the open project. Read get_project first. Times are seconds in the original source; ends are exclusive. Use explicit unique rightClipId for splits. Merge clipId with its following timeline neighbor. Retrying must reuse the exact requestId and payload. Different source clips cannot overlap. At least one clip must remain.',inputSchema:{type:'object',properties:{...revision,commands:{type:'array',items:{oneOf:commands},minItems:1,maxItems:1000}},required:[...Object.keys(revision),'commands'],additionalProperties:false}},
   {name:'start_export',description:'Start fixed-profile FFmpeg export of the current revision in the connected browser. Returns a job immediately. Keep the tab open and poll get_export_status. Output is a browser download, not a server file or remotely accessible URL. Reuse requestId on retries.',inputSchema:{type:'object',properties:revision,required:Object.keys(revision),additionalProperties:false}},
   {name:'get_export_status',description:'Read the latest browser export job: running, complete, failed, or cancelled, plus progress and filename/size. Complete means the browser has a downloadable Blob; it does not prove the user saved it. Returns null before any export.',inputSchema:empty},
@@ -102,7 +106,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({tools}));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   try {
     if (!tools.some(tool => tool.name === request.params.name)) throw new Error('Unknown tool.');
-    const result = request.params.name === 'get_connection' ? {url:pairingURL,connected:browser?.readyState === WebSocket.OPEN,mode:publicOrigin?'shared':'loopback',browserRequiredOnAgentHost:false,instructions:publicOrigin?'Open the shared URL in your own browser, connect, and choose a video. Keep that tab open.':'Open the URL on this computer. If the agent is remote, forward this loopback port or restart with SNIP_PUBLIC_URL set to your secure tunnel origin.'} : await callBrowser(request.params.name, request.params.arguments || {});
+    const result = request.params.name === 'get_connection' ? {url:pairingURL,bridgeId,connected:browser?.readyState === WebSocket.OPEN,mode:publicOrigin?'shared':'loopback',browserRequiredOnAgentHost:false,instructions:publicOrigin?'Open the shared URL in your own browser, connect, and choose a video. Keep that tab open.':'Open the URL on this computer. If the agent is remote, forward this loopback port or restart with SNIP_PUBLIC_URL set to your secure tunnel origin.'} : await callBrowser(request.params.name, request.params.arguments || {});
+    if(request.params.name==='get_frame'){const {data,mimeType,...metadata}=result;return {content:[{type:'text',text:JSON.stringify(metadata)},{type:'image',data,mimeType}]};}
     return {content:[{type:'text',text:JSON.stringify(result)}]};
   } catch (error) { return {isError:true,content:[{type:'text',text:error.message}]}; }
 });

@@ -26,7 +26,7 @@ const button=name=>page.getByRole('button',{name,exact:true});
 const unFocus=()=>page.evaluate(()=>document.activeElement instanceof HTMLElement&&document.activeElement.blur());
 try {
   await client.connect(transport);
-  const tools=await client.listTools();assert.equal(tools.tools.length,5);
+  const tools=await client.listTools();assert.equal(tools.tools.length,6);
   const pairing=await call('get_connection'),url=new URL(pairing.url),token=url.hash.slice(7);
   assert.equal(pairing.mode,proxy?'shared':'loopback');assert.equal(pairing.browserRequiredOnAgentHost,false);
   const forbidden=await fetch(url.origin,{headers:{Origin:'https://untrusted.example'}});assert.equal(forbidden.status,403);
@@ -34,14 +34,14 @@ try {
   await assert.rejects(()=>call('get_project'),/No editor connected/);
   log('MCP discovery works; unpaired and foreign-origin connections are rejected');
   await page.goto(pairing.url);await button('connect agent').click();
-  await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
+  await button('disconnect agent').waitFor();
   // Reopening a pairing fragment in the same tab must require consent again.
-  await button('agent connected · disconnect').click();
+  await button('disconnect agent').click();
   await page.goto(pairing.url);await button('connect agent').waitFor();
   assert.equal(await page.evaluate(()=>location.hash),'');
   assert.equal((await call('get_connection')).connected,false);
   await button('connect agent').click();
-  await page.waitForFunction(()=>document.body.textContent.includes('agent connected'));
+  await button('disconnect agent').waitFor();
   await page.getByRole('alertdialog').waitFor({state:'hidden'});
   log('Same-tab pairing reconnects with explicit consent and clears the token');
   await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
@@ -64,6 +64,21 @@ try {
   assert.equal((await call('get_project')).specification.edits.clips[0].speed,1);
   log('Trim drags reject agent mutations without consuming revision or request ID');
   const before=await call('get_project');assert(before.specification.source.sha256.length===64);
+  assert.equal(await button('disconnect agent').count(),1);
+  const playbackBefore=await page.locator('video').first().evaluate(v=>v.currentTime);
+  const frame=await client.callTool({name:'get_frame',arguments:{sessionId:before.sessionId,revision:before.revision,sourceTime:2}});
+  assert(!frame.isError);assert.equal(frame.content[1].type,'image');assert.equal(frame.content[1].mimeType,'image/jpeg');
+  const metadata=JSON.parse(frame.content[0].text);assert.equal(metadata.sourceTime,2);assert(Math.max(metadata.width,metadata.height)<=1280);
+  const frameFile=`${out}/agent-frame.jpg`;writeFileSync(frameFile,Buffer.from(frame.content[1].data,'base64'));
+  const decoded=JSON.parse(execFileSync(process.env.FFPROBE_PATH||'ffprobe',['-v','error','-show_streams','-of','json',frameFile],{encoding:'utf8'}));
+  assert.equal(decoded.streams[0].width,metadata.width);assert.equal(decoded.streams[0].height,metadata.height);
+  assert.equal(await page.locator('video').first().evaluate(v=>v.currentTime),playbackBefore);
+  assert.deepEqual(await call('get_project'),before);
+  await assert.rejects(()=>call('get_frame',{sessionId:before.sessionId,revision:before.revision+1,sourceTime:2}),/revision/);
+  await assert.rejects(()=>call('get_frame',{sessionId:before.sessionId,revision:before.revision,sourceTime:-1}),/sourceTime/);
+  await assert.rejects(()=>call('get_frame',{sessionId:before.sessionId,revision:before.revision,sourceTime:999}),/sourceTime/);
+  log('Agent receives a decoded frame image without moving preview or changing project; invalid and stale requests fail');
+
   const clipId=before.specification.edits.clips[0].id;
   const batch={sessionId:before.sessionId,revision:before.revision,requestId:'edit-1',commands:[
     {action:'splitClip',clipId,sourceTime:4,rightClipId:'demo'},
@@ -152,5 +167,17 @@ try {
   assert.equal(tinyJob.status,'failed');assert.match(tinyJob.error,/no readable video/);assert.equal(unexpectedDownload,false);
   assert.deepEqual((await call('get_project')).specification.edits,project.specification.edits);
   log('A sub-frame trim cannot report a successful audio-only video export');
+  await button('keep editing').click();
+  await button('disconnect agent').click();
+  assert.equal((await call('get_connection')).connected,false);
+  await page.routeWebSocket('**/agent?*',socket=>{
+    const server=socket.connectToServer();
+    server.onMessage(message=>{if(JSON.parse(String(message)).type!=='pong')socket.send(message);});
+  });
+  await page.goto(pairing.url);await button('connect agent').click();await button('disconnect agent').waitFor();
+  await page.clock.install();await page.clock.runFor(20000);
+  await button('disconnect agent').waitFor({state:'hidden'});
+  assert.match(await page.locator('body').innerText(),/agent disconnected/);
+  log('Disconnect works in the editor; missing bridge heartbeats clear connected state');
   assert.deepEqual(errors,[]);writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2));
 } finally {await client.close();await context.close();await browser.close();await proxy?.close();}
