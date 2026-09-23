@@ -119,7 +119,7 @@ export default function App(){
     const e=editsRef.current,index=e.clips.findIndex(c=>c.id===id);if(index<0)return;
     pausePlayback();
     if(activeClip.current!==index)seek(e.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,e),0));
-    setSelectedClip(id);setActionsOpen(true);
+    setSelectedClip(id);setEditorMode('timeline');setActionsOpen(true);
   };
   const changeClip=(patch:Partial<Clip>,record=true)=>{
     const c=editsRef.current.clips.find(c=>c.id===selectedClip);if(!c)return;const commands:Command[]=[];
@@ -360,20 +360,15 @@ export default function App(){
             <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
         </section>
-        <Card className="editor-controls gap-2 p-3" render={<section aria-label="video editor" />}>
-          <div className="flex justify-end">
-            <Button size="xs" variant="ghost" className="text-muted-foreground" aria-controls="editor-view" onClick={()=>{setEditorMode(editorMode==='chat'?'timeline':'chat');setActionsOpen(false);}}>
-              {editorMode==='chat'?<ListVideo />:<MessageSquare />}switch to {editorMode==='chat'?'timeline':'chat'}
-            </Button>
-          </div>
-          <div id="editor-view">
-            <div hidden={editorMode!=='timeline'}>
-              <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
-            </div>
-            <div hidden={editorMode!=='chat'}>
-              <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
-            </div>
-          </div>
+        <Card className="editor-controls p-3" render={<section aria-label="video editor" />}>
+          <Timeline
+            chatActive={editorMode==='chat'}
+            modeSwitch={<Button size="xs" variant="ghost" className="editor-mode-switch text-muted-foreground" aria-label={`switch to ${editorMode==='chat'?'editor':'chat'}`} aria-controls="editor-controls" onClick={()=>{setEditorMode(editorMode==='chat'?'timeline':'chat');setActionsOpen(false);}}>
+              {editorMode==='chat'?<ListVideo />:<MessageSquare />}<span><span className="hidden sm:inline">switch to </span>{editorMode==='chat'?'editor':'chat'}</span>
+            </Button>}
+            chatEditor={<ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />}
+            onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip}
+          />
         </Card>
       </div>
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}

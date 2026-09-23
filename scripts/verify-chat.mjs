@@ -42,7 +42,16 @@ try {
   await page.getByRole('button', { name: 'select your video', exact: true }).waitFor();
   await page.locator('#video-file').setInputFiles(sample);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+  const timeline = page.getByRole('region', {name:'video timeline',exact:true});
+  const manual = timeline.locator('.manual-controls');
+  const splitButton = page.getByRole('button', {name:'split',exact:true});
+  const initialSwitch = await page.getByRole('button', {name:'switch to chat',exact:true}).boundingBox();
+  const splitBounds = await splitButton.boundingBox();
+  assert(Math.abs(initialSwitch.y - splitBounds.y) < 2, 'Mode switch shares the manual actions row');
   await page.getByRole('button', {name:'switch to chat',exact:true}).click();
+  assert(await timeline.isVisible(), 'Timeline stays visible in chat');
+  assert(!(await manual.isVisible()), 'Chat replaces manual action buttons');
+  assert(await page.getByRole('slider', {name:'seek video',exact:true}).isVisible());
   assert.equal(await chat.getByRole('button').count(), 3);
   assert.equal(await chat.getByRole('combobox').count(), 0);
   assert(!/powered by|prompt and edit settings|what would you like to change/.test(await chat.innerText()));
@@ -51,13 +60,27 @@ try {
   const panel = page.getByRole('region', {name:'video editor',exact:true});
   assert.equal(await page.getByRole('tablist').count(),0);
   assert.equal(await panel.locator('[data-slot=card]').count(),0);
-  const panelBounds=await panel.boundingBox(), switchBounds=await panel.getByRole('button',{name:'switch to timeline'}).boundingBox();
-  assert(switchBounds.x>panelBounds.x+panelBounds.width/2 && switchBounds.y<panelBounds.y+40);
+  const panelBounds=await panel.boundingBox(), switchBounds=await panel.getByRole('button',{name:'switch to editor'}).boundingBox();
+  const promptBounds=await prompt.boundingBox();
+  assert(switchBounds.x>panelBounds.x+panelBounds.width/2 && switchBounds.y>=promptBounds.y && switchBounds.y+switchBounds.height<=promptBounds.y+promptBounds.height+1, 'Mode switch shares the prompt row');
   await prompt.fill('draft survives switching');
-  await page.getByRole('button',{name:'switch to timeline',exact:true}).click();
+  await page.getByRole('button',{name:'switch to editor',exact:true}).click();
+  await page.getByRole('button',{name:'switch to chat',exact:true}).click();
+  assert.equal(await prompt.inputValue(),'draft survives switching');
+  // The same timeline can seek and open a clip's manual controls from chat.
+  const ruler = await timeline.locator('.ruler').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width / 4, ruler.y + ruler.height / 2);
+  const playhead = page.getByRole('slider', {name:'seek video',exact:true});
+  assert(Math.abs(Number(await playhead.getAttribute('aria-valuenow')) - 2) < .02);
+  await playhead.press('Shift+ArrowRight');
+  assert(Math.abs(Number(await playhead.getAttribute('aria-valuenow')) - 3) < .02);
+  await timeline.locator('.timeline-clip').first().click({button:'right'});
+  await page.getByRole('button',{name:'close speed',exact:true}).click();
+  assert(await manual.isVisible());
   await page.getByRole('button',{name:'switch to chat',exact:true}).click();
   assert.equal(await prompt.inputValue(),'draft survives switching');
   await prompt.fill('');
+  console.log('PASS inline switch, persistent interactive timeline, hidden manual actions and preserved draft');
   const original = await saved();
   const fast = await submit('make the video 2x faster');
   assert.equal(fast.status, 200, JSON.stringify(fast.result));
@@ -94,9 +117,8 @@ try {
   const compound = await submit('split at 4 seconds and make the second clip 2x faster');
   assert.equal(compound.status, 200, JSON.stringify(compound.result));
   await waitSaved(e => e.clips.length === 2 && e.clips[1].speed === 2);
-  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
-  assert.equal(await page.locator('.timeline-clip').count(), 2);
-  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
+  assert(await timeline.isVisible());
+  assert.equal(await page.locator('.timeline-clip:visible').count(), 2);
   await chat.getByRole('button', { name: 'undo', exact: true }).click();
   await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1);
   console.log('PASS compound edit is reflected in timeline and undone atomically');
@@ -106,9 +128,7 @@ try {
   assert.deepEqual(ordered.result.changes.map(c => c.action), ['split','zoom','speed','split','zoom']);
   const planned = await waitSaved(e => e.clips.length === 3 && e.clips[2].zoom?.scale === 3);
   assert.deepEqual(planned.clips.map(c => [c.start,c.end,c.speed,c.zoom?.scale]), [[0,2,1,1.5],[2,6,2,1],[6,8,2,3]]);
-  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
-  assert.equal(await page.locator('.timeline-clip').count(),3);
-  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
+  assert.equal(await page.locator('.timeline-clip:visible').count(),3);
   await chat.getByRole('button', {name:'undo',exact:true}).click();
   await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1 && (e.clips[0].zoom?.scale ?? 1) === 1);
   await chat.getByRole('button', {name:'redo',exact:true}).click();
@@ -138,7 +158,7 @@ try {
   assert.equal(positioned.status, 200, JSON.stringify(positioned.result));
   await waitSaved(e => e.clips[0].zoom.scale === 2 && e.clips[0].zoom.x === 0 && e.clips[0].zoom.y === 0);
   assert.equal(await page.locator('.source-window video').evaluate(v => v.style.transform), 'scale(2, 2) translate(0%, 0%)');
-  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
+  await page.getByRole('button', {name:'switch to editor',exact:true}).click();
   const zoomButton = page.getByRole('button', { name: 'zoom 2×', exact: true });
   await zoomButton.click();
   const area = page.getByRole('group', { name: 'zoom area', exact: true });
@@ -175,7 +195,7 @@ try {
     await route.fulfill({ json: { ok:true, changes:[{action:'speed',clip:'selected',rate:3}], batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands: [{ action: 'setSpeed', clipId: request.project.selectedClip, speed: 3 }] }, summary: 'speed 3×' } });
   });
   await prompt.fill('make it 3x faster'); await prompt.press('Enter'); await ready;
-  await page.getByRole('button', {name:'switch to timeline',exact:true}).click();
+  await page.getByRole('button', {name:'switch to editor',exact:true}).click();
   await page.getByRole('button', { name: 'mute video', exact: true }).click();
   release();
   await page.getByRole('button', {name:'switch to chat',exact:true}).click();
@@ -205,8 +225,29 @@ try {
   await page.evaluate(() => { localStorage.setItem('snip-theme', 'dark'); });
   await page.reload(); await page.getByRole('button', {name:'switch to chat',exact:true}).click();
   await page.screenshot({ path: `${output}/mobile-dark.png`, fullPage: true });
-  await page.getByRole('button',{name:'switch to timeline',exact:true}).click();
-  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.getByRole('button',{name:'switch to editor',exact:true}).click();
+  await playhead.press('Home'); await playhead.press('Shift+ArrowRight');
+  await splitButton.click();
+  assert.equal(await page.locator('.timeline-clip:visible').count(),2);
+  for (const width of [320,390,768,1280]) {
+    await page.setViewportSize({width,height:844});
+    const bounds=await panel.boundingBox();
+    const toggle=await page.getByRole('button',{name:'switch to chat',exact:true}).boundingBox();
+    const split=await splitButton.boundingBox();
+    assert(Math.abs(toggle.y-split.y)<2, `Single toolbar row at ${width}px`);
+    for (const button of await manual.getByRole('button').all()) {
+      const box=await button.boundingBox();
+      assert(box.x>=bounds.x && box.x+box.width<=toggle.x, `Manual controls fit before switch at ${width}px`);
+    }
+    assert(toggle.x+toggle.width<=bounds.x+bounds.width);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await page.getByRole('button',{name:'switch to chat',exact:true}).click();
+    assert(await timeline.isVisible()); assert(!(await manual.isVisible()));
+    assert(await prompt.isVisible());
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await page.getByRole('button',{name:'switch to editor',exact:true}).click();
+  }
+  await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:`${output}/mobile-timeline.png`,fullPage:true});
   await page.getByRole('button',{name:'switch to chat',exact:true}).click();
   assert.equal(await chat.getByRole('button').count(), 3);

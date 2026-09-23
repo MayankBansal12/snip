@@ -103,6 +103,8 @@ body { text-transform: lowercase; }
 }
 
 .timeline-toolbar, .timeline-foot { align-items: center; }
+.timeline-toolbar[data-chat=true] { align-items: flex-start; }
+.timeline-toolbar[data-chat=true] > .editor-mode-switch { margin-top: 7px; }
 .timeline-clip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
 
 .timeline [data-slot=kbd] { height: 16px; min-width: 16px; font-size: 10px; }

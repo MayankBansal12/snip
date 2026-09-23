@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { PointerEvent, RefObject } from 'react';
+import type { PointerEvent, ReactNode, RefObject } from 'react';
 import { Scissors, ZoomIn, Trash2, RotateCcw, Merge, Undo2, Redo2 } from 'lucide-react';
 import { Kbd } from './ui/kbd';
 import { Button } from './ui/button';
@@ -9,8 +9,8 @@ import ClipActions from './ClipActions';
 import IconButton from './IconButton';
 import { mergeBlockReason, canMergeClips, trimBounds, clamp, clipDuration, clipSpeed, formatTime, sequenceDuration, toSequenceTime, toSourceTime } from '../types';
 import type { Clip, Edits, Source } from '../types';
-type Props = { videoRef: RefObject<HTMLVideoElement | null>; zoom:number; onZoom:(zoom:number)=>void; source: Source; edits: Edits; time: number; selected: string; frames: { url: string; time: number }[]; onSelect: (id: string) => void; onSeek: (time: number) => void; onClips: (clips: Clip[]) => void; onCheckpoint: () => void; onSplit: () => void; onDelete: () => void; onResetTrim: () => void; onUndo: () => void; onRedo: () => void; canUndo: boolean; canRedo: boolean; canSplit: boolean; actionsOpen: boolean; onActionsOpen: (open: boolean) => void; onOpenClip: (id: string) => void; onChangeClip: (patch: Partial<Clip>, record?: boolean) => void; onMerge: (index: number) => void };
-export default function Timeline({videoRef,zoom,onZoom,source,edits,time,selected,frames,onSelect,onSeek,onClips,onCheckpoint,onSplit,onDelete,canSplit,actionsOpen,onActionsOpen,onOpenClip,onChangeClip,onMerge,onResetTrim,onUndo,onRedo,canUndo,canRedo}:Props){
+type Props = { chatActive: boolean; chatEditor: ReactNode; modeSwitch: ReactNode; videoRef: RefObject<HTMLVideoElement | null>; zoom:number; onZoom:(zoom:number)=>void; source: Source; edits: Edits; time: number; selected: string; frames: { url: string; time: number }[]; onSelect: (id: string) => void; onSeek: (time: number) => void; onClips: (clips: Clip[]) => void; onCheckpoint: () => void; onSplit: () => void; onDelete: () => void; onResetTrim: () => void; onUndo: () => void; onRedo: () => void; canUndo: boolean; canRedo: boolean; canSplit: boolean; actionsOpen: boolean; onActionsOpen: (open: boolean) => void; onOpenClip: (id: string) => void; onChangeClip: (patch: Partial<Clip>, record?: boolean) => void; onMerge: (index: number) => void };
+export default function Timeline({chatActive,chatEditor,modeSwitch,videoRef,zoom,onZoom,source,edits,time,selected,frames,onSelect,onSeek,onClips,onCheckpoint,onSplit,onDelete,canSplit,actionsOpen,onActionsOpen,onOpenClip,onChangeClip,onMerge,onResetTrim,onUndo,onRedo,canUndo,canRedo}:Props){
   const track=useRef<HTMLDivElement>(null),scroll=useRef<HTMLDivElement>(null);const [trackWidth,setTrackWidth]=useState(900);const [trimming,setTrimming]=useState<string|null>(null);
   const drag=useRef<{pointer:number;x:number;width:number;duration:number;clips:Clip[];index:number;edge:'start'|'end'}|null>(null);
   const touch=useRef<{pointer:number;x:number;y:number}|null>(null);
@@ -49,14 +49,20 @@ export default function Timeline({videoRef,zoom,onZoom,source,edits,time,selecte
   ];
   let offset=0;
   return <section aria-label="video timeline" className="timeline">
-    <div className="timeline-toolbar mb-3 flex items-center justify-between gap-2">
-      <div className="timeline-actions flex items-center gap-1"><Button size="xs" variant="ghost" disabled={!canSplit} onClick={onSplit} aria-keyshortcuts="S"><Scissors />split<Kbd aria-hidden="true" className="hidden sm:inline-flex">s</Kbd></Button><ClipActions source={source} videoRef={videoRef} edits={edits} selected={selected} open={actionsOpen} onOpenChange={onActionsOpen} onChange={onChangeClip} onCheckpoint={onCheckpoint} /></div>
-      <div className="timeline-actions flex shrink-0 items-center gap-1">
-        {edits.clips.length>1 && <Tooltip><TooltipTrigger render={<Button size="xs" variant="ghost" aria-disabled={mergeIndex<0} aria-describedby={mergeTooltipId} className={mergeIndex<0?'cursor-default opacity-64':undefined} aria-keyshortcuts="M" onClick={()=>{if(mergeIndex>=0)onMerge(mergeIndex);}} />}><Merge />merge<Kbd aria-hidden="true" className="hidden sm:inline-flex">m</Kbd></TooltipTrigger><TooltipPopup id={mergeTooltipId} role="tooltip" className="max-w-72">{mergeIndex>=0?`merge with ${mergeIndex===selectedIndex?'next':'previous'} clip`: <div className="space-y-1">{mergeReasons.map(reason=><p key={reason}>{reason}</p>)}</div>}</TooltipPopup></Tooltip>}
-        <IconButton label="undo" size="icon-xs" aria-keyshortcuts="Control+Z Meta+Z" disabled={!canUndo} onClick={onUndo}><Undo2 /></IconButton>
-        <IconButton label="redo" size="icon-xs" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" disabled={!canRedo} onClick={onRedo}><Redo2 /></IconButton>
-        <Button size="xs" variant="ghost" aria-label="delete clip" aria-keyshortcuts="Delete Backspace" onClick={onDelete}><Trash2 />delete</Button>
+    <div className="timeline-toolbar mb-3 flex gap-2" data-chat={chatActive}>
+      <div id="editor-controls" className="min-w-0 flex-1">
+        <div hidden={chatActive} className="manual-controls flex items-center justify-between gap-2">
+          <div className="timeline-actions flex items-center gap-1"><Button size="xs" variant="ghost" disabled={!canSplit} onClick={onSplit} aria-label="split" aria-keyshortcuts="S"><Scissors /><span className="hidden sm:inline">split</span><Kbd aria-hidden="true" className="hidden sm:inline-flex">s</Kbd></Button><ClipActions source={source} videoRef={videoRef} edits={edits} selected={selected} open={actionsOpen} onOpenChange={onActionsOpen} onChange={onChangeClip} onCheckpoint={onCheckpoint} /></div>
+          <div className="timeline-actions flex shrink-0 items-center gap-1">
+            {edits.clips.length>1 && <Tooltip><TooltipTrigger render={<Button size="xs" variant="ghost" aria-label="merge" aria-disabled={mergeIndex<0} aria-describedby={mergeTooltipId} className={mergeIndex<0?'cursor-default opacity-64':undefined} aria-keyshortcuts="M" onClick={()=>{if(mergeIndex>=0)onMerge(mergeIndex);}} />}><Merge /><span className="hidden sm:inline">merge</span><Kbd aria-hidden="true" className="hidden sm:inline-flex">m</Kbd></TooltipTrigger><TooltipPopup id={mergeTooltipId} role="tooltip" className="max-w-72">{mergeIndex>=0?`merge with ${mergeIndex===selectedIndex?'next':'previous'} clip`: <div className="space-y-1">{mergeReasons.map(reason=><p key={reason}>{reason}</p>)}</div>}</TooltipPopup></Tooltip>}
+            <IconButton label="undo" size="icon-xs" aria-keyshortcuts="Control+Z Meta+Z" disabled={!canUndo} onClick={onUndo}><Undo2 /></IconButton>
+            <IconButton label="redo" size="icon-xs" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" disabled={!canRedo} onClick={onRedo}><Redo2 /></IconButton>
+            <Button size="xs" variant="ghost" aria-label="delete clip" aria-keyshortcuts="Delete Backspace" onClick={onDelete}><Trash2 /><span className="hidden sm:inline">delete</span></Button>
+          </div>
+        </div>
+        <div hidden={!chatActive}>{chatEditor}</div>
       </div>
+      {modeSwitch}
     </div>
     <div ref={scroll} className="timeline-scroll"><div className="timeline-inner" style={{width:`${zoom*100}%`}}><div className="ruler" onPointerDown={startScrub} onPointerMove={e=>{if(scrubbing.current===e.pointerId)seek(e);}} onPointerUp={end} onPointerCancel={end}>{ticks.map(t=><span key={t} style={{left:`${t/Math.max(duration,.001)*100}%`}}>{formatTime(t,tickStep<1)}</span>)}</div>
       <div ref={track} className="clip-track" onContextMenu={e=>{e.preventDefault();const box=e.currentTarget.getBoundingClientRect();const position=toSourceTime(clamp((e.clientX-box.left)/box.width,0,1)*duration,edits);onOpenClip(edits.clips[position.index].id);}} onDoubleClick={e=>{const box=e.currentTarget.getBoundingClientRect();const position=toSourceTime(clamp((e.clientX-box.left)/box.width,0,1)*duration,edits);onOpenClip(edits.clips[position.index].id);}}>

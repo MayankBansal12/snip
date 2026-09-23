@@ -35,7 +35,7 @@ export default function ClipActions(p: Props) {
   return <>
     {(p.modes ?? ['speed', 'zoom'] as const).map(mode => <Popover key={mode} open={p.open && kind === mode} onOpenChange={open => { setKind(mode); p.onOpenChange(open); }}>
       <PopoverTrigger render={<Button size="xs" variant="ghost" />} aria-label={`${mode} ${mode === 'speed' ? speed : zoom.scale}×${mode==='zoom'&&p.showFocus?` · ${zoomFocusLabel(zoom)}`:''}`}>
-        {mode === 'speed' ? <Gauge /> : <ZoomIn />}<span>{mode} <span className="tabular-nums">{mode === 'speed' ? speed : zoom.scale}×</span>{mode==='zoom'&&p.showFocus&&<span className="text-muted-foreground"> · {zoomFocusLabel(zoom)}</span>}</span><Kbd aria-hidden="true" className={p.showFocus?'hidden':'hidden sm:inline-flex'}>{mode === 'speed' ? 'x' : 'z'}</Kbd>
+        {mode === 'speed' ? <Gauge /> : <ZoomIn />}<span><span className="hidden sm:inline">{mode} </span><span className="tabular-nums">{mode === 'speed' ? speed : zoom.scale}×</span>{mode==='zoom'&&p.showFocus&&<span className="text-muted-foreground"> · {zoomFocusLabel(zoom)}</span>}</span><Kbd aria-hidden="true" className={p.showFocus?'hidden':'hidden sm:inline-flex'}>{mode === 'speed' ? 'x' : 'z'}</Kbd>
       </PopoverTrigger>
       <PopoverPopup onKeyDown={event => {
         if (event.target instanceof Element && event.target.closest('input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
