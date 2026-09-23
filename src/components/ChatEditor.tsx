@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, Redo2, Square, Undo2 } from 'lucide-react';
 import { Button } from './ui/button';
-import { Spinner } from './ui/spinner';
 import IconButton from './IconButton';
 
 type Props = {
@@ -17,6 +16,11 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
   const input = useRef<HTMLTextAreaElement>(null), controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => { if (active && matchMedia('(pointer: fine)').matches) input.current?.focus({ preventScroll: true }); }, [active]);
+  useEffect(() => {
+    if (!result || result.error) return;
+    const timer = setTimeout(() => setResult(current => current === result ? null : current), 3000);
+    return () => clearTimeout(timer);
+  }, [result]);
   async function submit() {
     const prompt = text.trim();
     if (!prompt || controller.current) return;
@@ -37,16 +41,23 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
   function cancel() { controller.current?.abort(); controller.current = null; setPending(false); setResult({ message: 'Edit cancelled. Your video hasn’t changed.' }); }
   const visibleResult = result && (result.revision === undefined || result.revision === revision) ? result : null;
   return <section className="chat-editor" aria-label="edit with chat">
-    <form className="flex items-end gap-3" onSubmit={e => { e.preventDefault(); void submit(); }}>
+    <form className={`flex items-end gap-x-3 gap-y-2 ${visibleResult?.error ? 'flex-wrap' : ''}`} aria-busy={pending} onSubmit={e => { e.preventDefault(); void submit(); }}>
       <textarea id="edit-prompt" ref={input} value={text} maxLength={1200} readOnly={pending} rows={1}
         className="chat-prompt block min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/55"
-        placeholder="describe your edit…" aria-label="what would you like to change?"
-        aria-describedby={pending || visibleResult ? 'chat-status' : undefined}
+        placeholder={visibleResult && !visibleResult.error ? '' : 'describe your edit…'} aria-label="what would you like to change?"
+        aria-describedby={visibleResult ? 'chat-status' : undefined}
         onChange={e => { setText(e.target.value); setResult(null); }}
         onKeyDown={e => {
           if (e.key === 'Escape' && pending) { e.preventDefault(); cancel(); }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(); }
         }} />
+      <div id="chat-status" role="status" aria-live="polite" aria-atomic="true"
+        className={visibleResult ? visibleResult.error ? 'order-last w-full px-1 text-xs leading-relaxed text-destructive-foreground' : 'chat-feedback min-w-0 self-center text-xs text-muted-foreground' : 'sr-only'}>
+        {visibleResult && <span className="flex min-w-0 items-center justify-end gap-1.5" title={visibleResult.message}>
+          {visibleResult.revision !== undefined && <Check aria-hidden="true" className="size-3.5 shrink-0 text-primary" />}
+          <span className={visibleResult.error ? 'w-full' : 'truncate'}>{visibleResult.message}</span>
+        </span>}
+      </div>
       <div className="flex shrink-0 items-center gap-1 pb-0.5">
         <IconButton label="undo" size="icon-sm" disabled={!canUndo || pending} onClick={() => { onUndo(); setResult({ message: 'edit undone' }); }}><Undo2 /></IconButton>
         <IconButton label="redo" size="icon-sm" disabled={!canRedo || pending} onClick={() => { onRedo(); setResult({ message: 'edit restored' }); }}><Redo2 /></IconButton>
@@ -54,9 +65,5 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
           : <Button key="submit" type="submit" size="icon-sm" aria-label="apply edit" disabled={!text.trim()}><ArrowUp /></Button>}
       </div>
     </form>
-    <div id="chat-status" role="status" aria-live="polite" className={pending || visibleResult ? `mt-2 px-1 text-xs leading-relaxed ${visibleResult?.error ? 'text-destructive-foreground' : 'text-muted-foreground'}` : 'sr-only'}>
-      {pending ? <span className="inline-flex items-center gap-2"><Spinner aria-hidden="true" className="size-3.5" />making your edit…</span>
-        : visibleResult ? <span className="inline-flex items-start gap-1.5">{visibleResult.revision !== undefined && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}{visibleResult.message}</span> : null}
-    </div>
   </section>;
 }

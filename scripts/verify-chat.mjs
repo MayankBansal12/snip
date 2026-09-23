@@ -86,6 +86,21 @@ try {
   assert.equal(fast.status, 200, JSON.stringify(fast.result));
   await waitSaved(e => e.clips[0].speed === 2);
   assert.match(await status.innerText(), /speed 2×/);
+  for (const width of [1280,390,320]) {
+    await page.setViewportSize({width,height:1000});
+    const feedback = await status.boundingBox();
+    const undo = await chat.getByRole('button', {name:'undo',exact:true}).boundingBox();
+    assert(feedback.x + feedback.width <= undo.x, `Confirmation sits before undo/redo at ${width}px`);
+    assert(feedback.y < undo.y + undo.height && feedback.y + feedback.height > undo.y, `Confirmation shares the action row at ${width}px`);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    if (width === 390) await page.screenshot({path:`${output}/mobile-confirmation.png`,fullPage:true});
+    if (width === 1280) await page.screenshot({path:`${output}/desktop-confirmation.png`,fullPage:true});
+  }
+  await page.setViewportSize({width:1280,height:1000});
+  await page.waitForTimeout(3200);
+  assert.equal(await status.innerText(), '', 'Confirmation clears after three seconds');
+  assert.equal(await prompt.getAttribute('placeholder'), 'describe your edit…');
+  console.log('PASS inline confirmation on desktop/mobile and automatic dismissal');
   await chat.getByRole('button', { name: 'undo', exact: true }).click();
   await waitSaved(e => (e.clips[0].speed ?? e.speed) === 1);
   await chat.getByRole('button', { name: 'redo', exact: true }).click();
@@ -195,6 +210,8 @@ try {
     await route.fulfill({ json: { ok:true, changes:[{action:'speed',clip:'selected',rate:3}], batch: { requestId: request.requestId, sessionId: request.sessionId, revision: request.revision, commands: [{ action: 'setSpeed', clipId: request.project.selectedClip, speed: 3 }] }, summary: 'speed 3×' } });
   });
   await prompt.fill('make it 3x faster'); await prompt.press('Enter'); await ready;
+  assert.equal(await status.innerText(), '', 'No loading progress message');
+  assert.equal(await chat.locator('form').getAttribute('aria-busy'), 'true');
   await page.getByRole('button', {name:'switch to editor',exact:true}).click();
   await page.getByRole('button', { name: 'mute video', exact: true }).click();
   release();
@@ -218,6 +235,8 @@ try {
 
   await page.route('**/api/edit', route => route.fulfill({ status: 503, json: { ok:false, error: {code:'SERVICE_UNAVAILABLE',message:'Jev is busy right now. Try again in a moment.'} } }));
   await submit('mute the audio'); assert.match(await status.innerText(), /jev is busy/i);
+  await page.waitForTimeout(3200);
+  assert.match(await status.innerText(), /jev is busy/i, 'Errors remain readable after three seconds');
   await page.unroute('**/api/edit');
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
