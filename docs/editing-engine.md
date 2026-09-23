@@ -10,9 +10,12 @@ The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source
 
 ## Connect an agent
 
-Run Node.js 22+ wherever the agent runs (your computer or a headless VM):
+For this unmerged preview, clone `feat/deterministic-editing-engine` rather than `main`. Use a fresh directory to preserve existing work. Run Node.js 22+ wherever the agent runs (your computer or a headless VM):
 
 ```sh
+git clone --branch feat/deterministic-editing-engine --single-branch https://github.com/MayankBansal12/snip.git snip-agent-preview
+cd snip-agent-preview
+git branch --show-current
 npm ci
 npm run build
 ```

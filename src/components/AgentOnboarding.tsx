@@ -8,7 +8,14 @@ const introduction = 'Hey, help me edit a video with Snip. Connect its local MCP
 const config = JSON.stringify({ mcpServers: { snip: { command: 'node', args: ['/absolute/path/to/snip/scripts/mcp-server.mjs'], env: { SNIP_PORT: '5188' } } } }, null, 2);
 const prompt = `${introduction}
 
-Set up Snip from ${repository} using docs/editing-engine.md. Build it locally with Node.js 22+, npm ci, and npm run build. Replace the placeholder path below with the absolute path to the local checkout and configure this stdio MCP server:
+Set up Snip from ${repository} using docs/editing-engine.md. For this preview, use the feat/deterministic-editing-engine branch, not main. Clone it into a new directory:
+
+git clone --branch feat/deterministic-editing-engine --single-branch https://github.com/MayankBansal12/snip.git snip-agent-preview
+cd snip-agent-preview
+npm ci
+npm run build
+
+Use Node.js 22+. If that directory already exists, choose a fresh directory rather than overwriting existing work. Run git branch --show-current to verify the branch before building. Replace the placeholder path below with the absolute path to the local checkout and configure this stdio MCP server:
 
 ${config}
 
