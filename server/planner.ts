@@ -46,13 +46,15 @@ export function numbersIn(text: string): number[] {
 
 export function createPlan(request: ChatRequest) {
   const numbers = numbersIn(request.text);
-  const ordering = 'Read the COMPLETE user_request and identify its requested edits in their stated order. Each change of action or target is a separate edit, even if phrased without verbs or joined with and. Zoom scale plus focus is ONE edit. A list of split timestamps for the same target is ONE edit. Consecutive output settings (mute, format, resolution, quality) are ONE output edit. Repeated zoom/speed actions for different clips are separate edits. A trailing shared target joined with AND, such as "1x zoom and 1x speed for clip 1", applies to both settings. THEN starts a new scope: "zoom 2x then speed 0.5x for clip 2" zooms ALL clips and changes only clip 2 speed. Never carry a later target backwards across THEN. Do not invent edits or reorder them.';
+  const ordering = 'Read the COMPLETE user_request and identify its requested edits in their stated order. Each change of action or target is a separate edit, even if phrased without verbs or joined with and. Zoom scale plus focus is ONE edit. A list of split timestamps for the same target is ONE edit. Consecutive output settings (mute, format, resolution, quality) are ONE output edit. Repeated zoom/speed actions for different clips are separate edits. Count repeated actions separately: split, zoom, speed, split, zoom are FIVE edits in that order. A trailing shared target joined with AND, such as "1x zoom and 1x speed for clip 1", applies to both settings. THEN starts a new scope: "zoom 2x then speed 0.5x for clip 2" zooms ALL clips and changes only clip 2 speed. Never carry a later target backwards across THEN. Do not invent edits or reorder them.';
   const choices: Record<string, Choices> = {}, questions: Record<string, Question> = {};
   function add(key: string, question: string, options: Choices, index?: number) {
     choices[key] = options;
     questions[key] = { type: 'choice', instructions: index === undefined ? question : {
       question: `For the ${['FIRST','SECOND','THIRD','FOURTH','FIFTH','SIXTH','SEVENTH','EIGHTH'][index]} edit requested in user_request: ${question}`,
-      scope: 'Count requested actions in mention order. Different actions joined by and are separate edits. Count repeated actions separately: split, zoom, speed, split, zoom are FIVE edits in that order. One list of split timestamps is one edit. Consecutive output settings (mute, format, resolution, quality) are ONE edit that includes ALL those settings. Only answer about this numbered edit; ignore other edits when selecting this field.',
+      scope: ['action','target','splitTarget'].some(field=>key.endsWith('_'+field))
+        ? 'Count requested actions in mention order. Different actions joined by and are separate edits. Count repeated actions separately: split, zoom, speed, split, zoom are FIVE edits in that order. One list of split timestamps is one edit. Consecutive output settings are one edit. Only answer about this numbered edit. Prefer its literal target reference: it=previous, right part=right, last part=last; do not guess a numbered clip instead.'
+        : 'Answer only this numbered edit, following state.rules. Ignore other edits when choosing its values.',
       edit_number: index + 1,
     }, criteria: Object.fromEntries(Object.entries(options).map(([k,v]) => [k,v.description])) };
   }
@@ -94,27 +96,40 @@ export function createPlan(request: ChatRequest) {
     for (let n=1;n<=count;n++) targets[`clip${n}`]=option(`Clip ${n} after preceding edits; may be created by a split.`,{clip:n});
     for (let n=1;n<=edits.clips.length;n++) targets[`original${n}`]=option(`Explicitly ORIGINAL clip ${n}, before any edits in this request.`,{original:n});
     for (let n=1;n<=i;n++) for (const side of ['left','right'] as const) targets[`split${n}_${side}`]=option(`The ${side} part produced by instruction ${n}.`,{split:n,side});
-    addField('target', 'Which clip(s) does this numbered edit act on? Prefer the named selector: last part=last, right part=right, it=previous, first clip=first, clip N=clipN. Only explicitly ORIGINAL references use originalN. No target means all. Respect shared targets across AND, but never across THEN. Zoom focus and first/last SECONDS of a trim do not select clips. For merge choose the first named clip.',targets);
-    addField('splitTarget', 'For SPLIT only: does THIS split explicitly name a clip? If not, choose all (timeline time). Ignore clips named in other actions such as zoom or speed. Relative playhead splits are timeline-wide unless a clip is explicitly named. Do not choose a numbered clip just because the split time falls inside it.',targets);
+    addField('target', 'Which clip(s) does this numbered edit act on? Prefer the named selector: last part=last, right part=right, it=previous, first clip=first, clip N=clipN. Only explicitly ORIGINAL references use originalN. No target in THIS edit means all. A target in a later THEN clause does not apply backwards: zoom 2x THEN speed 0.5x for clip 2 means zoom ALL, then speed clip 2. Only AND can share a trailing target. Zoom focus and first/last SECONDS of a trim do not select clips. For merge choose the first named clip.',targets);
+    addField('splitTarget', 'Which clip(s) does this numbered edit act on? Prefer the literal reference: this clip=selected, it/the same clip=previous, last part=last, right part=right, clip N=clipN. If THIS edit names no clip or part, choose all. Ignore targets belonging to other edits; a number of seconds is a time, not a clip number.',{
+      ...targets,
+      all: option('NO clip or part reference in this split: split at 4 seconds / split 3 seconds after / split here. Also explicitly whole video or all clips.', 'all'),
+      selected: option('Explicit THIS CLIP, CURRENT CLIP or SELECTED CLIP. Use the selected flag in state.timeline, even if the playhead is elsewhere.', 'selected'),
+      previous: option('Explicit IT, THAT CLIP or SAME CLIP referring to an earlier edit in this request.', 'previous'),
+    });
     addField('mergeWith', 'For MERGE only, which SECOND clip should be merged with the first? If unnamed, use its next neighbor.', {next:option('The next adjacent clip; no second clip explicitly named.','next'),...targets});
     values('speed','For SPEED only, what playback rate does this numbered edit request? Explicit rates are absolute, bare faster/slower are relative. Slow motion is 0.5x; normal is 1x. Ignore zoom amounts and clip numbers.', ['faster','slower',.25,.5,.75,1,1.25,1.5,1.75,2,3,4,...numbers.filter(n=>n>=.25&&n<=4)], n=>n==='faster'?'Double current speed (faster without a number).':n==='slower'?'Halve current speed (slower without a number).':`Set speed to ${n}x.`);
     values('zoom','For ZOOM only, what magnification does this numbered edit request? Explicit scale is absolute. Normal/no zoom means 1x, double zoom means 2x, triple zoom means 3x. More/closer/zoom in means increase current scale. Zoom out means reduce it. Position-only requests preserve current scale.', ['keep','in','out',1,1.25,1.5,2,3,4,...numbers.filter(n=>n>=1&&n<=4)], n=>n==='keep'?'Only focus/position is requested; preserve current scale (start at 1.5x if unzoomed).':n==='in'?'Zoom in more: multiply current scale by 1.5.':n==='out'?'Zoom out: divide current scale by 1.5.':`Set magnification to ${n}x.`);
     addField('focus','For ZOOM only, what spatial focus is requested? A clip/part reference (right part, middle clip, last part) identifies the target and does NOT request a focus change. Only an explicit spatial direction changes focus. Otherwise choose keep.', {keep:option('No position specified; keep existing focus.',null),...Object.fromEntries([
       ['center',.5,.5],['left',0,.5],['right',1,.5],['top',.5,0],['bottom',.5,1],['top left',0,0],['top right',1,0],['bottom left',0,1],['bottom right',1,1],
     ].map(([name,x,y],n)=>[`p${n}`,option(String(name),{x,y})]))});
-    const splits: Choices = {unsupported,here:option('Split here/now, exactly at the playhead captured when this request was submitted.',[{from:'playhead',seconds:0}]),half:option('Split in half / halfway through the target.',[{from:'half'}])};
+    addField('splitReference','For SPLIT only, what time-reference wording does THIS edit use? In half / halfway means half. Exactly here / now without an offset means here. Choose an explicit origin when the user names playhead/here/now, timeline, start or end. Otherwise choose at for at N seconds, or after for after/in/later N seconds. Code combines implicit at/after wording with the target clip; you do not need to calculate the resulting time.',{
+      at: option('AT N seconds, with NO explicit timeline/playhead/start/end origin. May name a clip or part.', 'at'),
+      after: option('AFTER N seconds / IN N seconds / N seconds LATER, with NO explicit playhead/here/now/start/end origin. May name a clip: split clip 3 after 1 second or split this clip after 1 second.', 'after'),
+      timeline: option('Explicit TIMELINE time / timestamp N. The user specifically names the timeline as the time origin.', 'timeline'),
+      clipStart: option('Explicit START / BEGINNING of the target, or N seconds INTO a clip / N seconds IN. Not merely after N seconds.', 'clipStart'),
+      playheadAfter: option('Explicit AFTER THE PLAYHEAD / from HERE / from NOW: the words playhead, here or now are present. Choose this even when the user also names a clip.', 'playheadAfter'),
+      playheadBefore: option('BEFORE the PLAYHEAD / earlier / back N seconds. Not before the clip end.', 'playheadBefore'),
+      clipEnd: option('N seconds BEFORE THE END of the target clip or video.', 'clipEnd'),
+      here: option('Explicit HERE / NOW / at the current playhead, with no offset. NOT half or halfway.', 'here'),
+      half: option('HALF / HALFWAY through the target.', 'half'), unsupported,
+    });
+    const splits: Choices = {unsupported};
     const timeNumbers = numbers;
-    for (const [n,seconds] of timeNumbers.entries()) {
-      splits[`at${n}`]=option(`Split AT ${seconds}s, an absolute timeline timestamp (or ${seconds}s into a specifically named clip).`,[{from:'timeline',seconds}]);
-      splits[`after${n}`]=option(`Split ${seconds}s AFTER / later / ahead / from here / in ${seconds}s: offset from the current playhead.`,[{from:'playhead',seconds}]);
-      splits[`before${n}`]=option(`Split ${seconds}s BEFORE / earlier / back: negative offset from the current playhead.`,[{from:'playhead',seconds:-seconds}]);
-      splits[`end${n}`]=option(`Split ${seconds}s BEFORE THE END of the target.`,[{from:'clipEnd',seconds:-seconds}]);
+    for (const [n,seconds] of [...new Set([0,...timeNumbers])].entries()) {
+      splits[`v${n}`]=option(`${seconds} seconds. The time value/offset only; ignore clip numbers and other edits.`,[seconds]);
     }
     for(let a=0;a<timeNumbers.length;a++)for(let b=a+2;b<=Math.min(timeNumbers.length,a+MAX_EDITS);b++){
       const positions=timeNumbers.slice(a,b);
-      splits[`list${a}_${b}`]=option(`All timestamps ${positions.join(', ')} seconds in this split edit.`,positions.map(seconds=>({from:'timeline',seconds})));
+      splits[`list${a}_${b}`]=option(`All requested split time values ${positions.join(', ')} seconds.`,positions);
     }
-    addField('split','For SPLIT only, choose the requested position(s). At N seconds means absolute time; N seconds after/later/from here or in N seconds means playhead plus N, even without an explicit reference. Before/earlier means playhead minus N. A list such as split at 4 and 8 seconds requests both timestamps. Select the meaning even if out of bounds; code validates it.',splits);
+    addField('split','For SPLIT only, how many seconds are requested? Select just the numeric time/offset, ignoring clip numbers, speeds and other actions. Use the positive amount for before/after. A list of split positions selects all its time values. The time reference is answered separately in splitReference.',splits);
     const trims: Choices = {unsupported};
     for(const [n,seconds] of numbers.entries()) {
       trims[`start${n}`]=option(`Remove the first ${seconds}s. Default for bare trim ${seconds} seconds.`,{mode:'removeStart',seconds});
@@ -175,7 +190,18 @@ export function readChanges(plan: ReturnType<typeof createPlan>, raw: unknown, u
     }
     const clip=get<Target>(action==='split'?'splitTarget':'target');
     switch(action){
-      case 'split':for(const [n,at] of get<Time[]>('split').entries())changes.push({action,clip,at,result:`split${i+1}${n?`_${n+1}`:''}`});break;
+      case 'split':{
+        const reference=get<'at'|'after'|'timeline'|'clipStart'|'playheadAfter'|'playheadBefore'|'clipEnd'|'here'|'half'>('splitReference');
+        const origin=reference==='at'?(clip==='all'?'timeline':'clipStart'):reference==='after'?(clip==='all'?'playheadAfter':'clipStart'):reference;
+        const positions=reference==='here'||reference==='half'?[0]:get<number[]>('split');
+        for(const [n,seconds] of positions.entries()){
+          const at:Time=origin==='half'?{from:'half'}:origin==='here'?{from:'playhead',seconds:0}
+            :origin==='playheadAfter'||origin==='playheadBefore'?{from:'playhead',seconds:origin==='playheadBefore'?-seconds:seconds}
+            :{from:origin,seconds:origin==='clipEnd'?-seconds:seconds};
+          changes.push({action,clip,at,result:`split${i+1}${n?`_${n+1}`:''}`});
+        }
+        break;
+      }
       case 'trim':changes.push({action,clip,range:get<Trim>('trim')});break;
       case 'speed':changes.push({action,clip,rate:get<number|'faster'|'slower'>('speed')});break;
       case 'zoom':changes.push({action,clip,scale:get<number|'in'|'out'|'keep'>('zoom'),focus:get('focus')});break;

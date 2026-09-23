@@ -5,7 +5,7 @@ import { applyCommands, normalizeEdits } from '../src/engine/index';
 import { defaults, sequenceDuration } from '../src/types';
 import { compileAnswer, createPlan, numbersIn, readRequest } from '../server/planner';
 import { compileChanges } from '../server/compiler';
-import type { Change } from '../server/operations';
+import type { Change, Time } from '../server/operations';
 import { handleEdit } from '../server/edit';
 
 function fixture(text='make it 2x faster'){
@@ -18,7 +18,15 @@ function answers(request:ReturnType<typeof fixture>,rows:Record<string,unknown>[
   raw.answers.status={type:'choice',choice:'ready',confidence:1};
   raw.answers.count={type:'choice',choice:`n${rows.length}`,confidence:1};
   for(let i=rows.length+1;i<=8;i++)raw.answers[`edit${i}_action`]={type:'choice',choice:'none',confidence:1};
-  for(const [i,row] of rows.entries())for(const [field,value] of Object.entries(row)){
+  for(const [i,row] of rows.entries())for(const [field,input] of Object.entries(row)){
+    let value=input;
+    if(row.action==='split'&&field==='split'){
+      const times=input as Time[],first=times[0];
+      const reference=first.from==='half'?'half':first.from==='playhead'?(first.seconds===0?'here':first.seconds<0?'playheadBefore':'playheadAfter'):first.from;
+      raw.answers[`edit${i+1}_splitReference`]={type:'choice',choice:reference,confidence:1};
+      if(reference==='half'||reference==='here')continue;
+      value=times.map(time=>time.from==='half'?0:reference==='playheadBefore'||reference==='clipEnd'?-time.seconds:time.seconds);
+    }
     const key=`edit${i+1}_${field==='target'&&row.action==='split'?'splitTarget':field}`;
     const choice=Object.entries(plan.choices[key]).find(([,v])=>JSON.stringify(v.value)===JSON.stringify(value))?.[0];
     assert(choice,`Missing ${key} option ${JSON.stringify(value)}`);
@@ -90,7 +98,7 @@ test('unknown, missing and low-confidence required answers reject the entire res
   const request=fixture('zoom 2x then split at 4 seconds'),before=structuredClone(request);
   const {plan,raw}=answers(request,[{action:'zoom',target:'all',zoom:2,focus:null},{action:'split',target:'all',split:[{from:'timeline',seconds:4}]}]);
   raw.answers.edit2_split.choice='__proto__';assert.throws(()=>compileAnswer(request,plan,raw),/unreadable/);
-  raw.answers.edit2_split.choice='at0';raw.answers.edit2_split.confidence=.1;assert.throws(()=>compileAnswer(request,plan,raw),/clear enough/);
+  raw.answers.edit2_split.choice='v0';raw.answers.edit2_split.confidence=.1;assert.throws(()=>compileAnswer(request,plan,raw),/clear enough/);
   delete raw.answers.edit2_split;assert.throws(()=>compileAnswer(request,plan,raw),/incomplete/);
   raw.answers.status.choice='unsupported';assert.throws(()=>compileAnswer(request,plan,raw),/can’t inspect/);
   assert.deepEqual(request,before);
@@ -215,7 +223,54 @@ test('HTTP handler makes exactly one Jev call with scoped questions and returns 
 test('multiple splits in one named clip retain that instruction’s local time origin',()=>{
   const request=fixture('split clip 2 at 2 and 4 seconds');
   request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:0,end:4},{id:'b',start:6,end:12}]},12);
-  const {plan,raw}=answers(request,[{action:'split',target:{clip:2},split:[{from:'timeline',seconds:2},{from:'timeline',seconds:4}]}]);
+  const {plan,raw}=answers(request,[{action:'split',target:{clip:2},split:[{from:'clipStart',seconds:2},{from:'clipStart',seconds:4}]}]);
   const result=compileAnswer(request,plan,raw);
   assert.deepEqual(applyCommands(request.project.edits,result.batch.commands,12).clips.map(c=>[c.start,c.end]),[[0,4],[6,8],[8,10],[10,12]]);
+});
+
+
+test('named clip offsets stay local through trimming, speed and an unrelated playhead',()=>{
+  const request=fixture('split clip 3 after 1 seconds');
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:2,end:4},{id:'b',start:4,end:6,speed:2},{id:'c',start:6,end:12,speed:2}]},12);
+  const before=structuredClone(request.project.edits);
+  for(const time of [0,4.5]){
+    request.project.time=time;
+    const {plan,raw}=answers(request,[{action:'split',target:{clip:3},split:[{from:'clipStart',seconds:1}]}]);
+    raw.answers.edit1_splitReference.choice='after';
+    const result=compileAnswer(request,plan,raw);
+    const next=applyCommands(request.project.edits,result.batch.commands,12);
+    assert.deepEqual(next.clips.map(c=>[c.start,c.end,c.speed]),[[2,4,1],[4,6,2],[6,8,2],[8,12,2]]);
+    assert.match(result.summary,/split at 4s \(1s into clip 3\)/);
+    assert.deepEqual(request.project.edits,before);
+  }
+  const clipSplit=(from:'clipStart'|'timeline'|'playhead',seconds:number):Change=>({action:'split',clip:{clip:3},at:{from,seconds},result:'split1'});
+  request.project.time=3.5;
+  assert.equal(edited(request,[clipSplit('timeline',4)]).clips[2].end,8);
+  assert.equal(edited(request,[clipSplit('playhead',1)]).clips[2].end,9);
+  assert.throws(()=>compileChanges(request,[clipSplit('clipStart',4)]),/outside the video/);
+  request.project.time=0;
+  assert.throws(()=>compileChanges(request,[clipSplit('playhead',1)]),/outside clip 3 \(3–6s/);
+  assert.deepEqual(request.project.edits,before);
+});
+
+test('local split offsets resolve after earlier speed changes and on newly created parts',()=>{
+  const request=fixture('make clip 2 faster then split it after 1 second then split the right part after 1 second');
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:0,end:4},{id:'b',start:4,end:12}]},12);
+  const value=edited(request,[{action:'speed',clip:{clip:2},rate:2},
+    {action:'split',clip:'previous',at:{from:'clipStart',seconds:1},result:'split2'},
+    {action:'split',clip:{split:'latest',side:'right'},at:{from:'clipStart',seconds:1},result:'split3'},
+  ]);
+  assert.deepEqual(value.clips.map(c=>[c.start,c.end,c.speed]),[[0,4,1],[4,6,2],[6,8,2],[8,12,2]]);
+});
+
+
+test('implicit after uses the playhead without a clip target; here and half need no numeric answer',()=>{
+  const request=fixture('split 3 seconds after');
+  const {plan,raw}=answers(request,[{action:'split',target:'all',split:[{from:'playhead',seconds:3}]}]);
+  raw.answers.edit1_splitReference.choice='after';
+  assert.deepEqual(compileAnswer(request,plan,raw).changes[0],{action:'split',clip:'all',at:{from:'playhead',seconds:3},result:'split1'});
+  for(const [at,end] of [[{from:'half'},6],[{from:'playhead',seconds:0},3]] as const){
+    const {plan,raw}=answers(request,[{action:'split',target:'all',split:[at]}]);
+    assert.equal(applyCommands(request.project.edits,compileAnswer(request,plan,raw).batch.commands,12).clips[0].end,end);
+  }
 });

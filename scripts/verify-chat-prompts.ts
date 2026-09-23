@@ -6,12 +6,34 @@ import type { Edits } from '../src/types';
 
 const base = () => { const edits = defaults(50.2); edits.clips[0].id = 'a'; return edits; };
 const twoClips = () => ({ ...base(), clips: [{ id:'a', start:0, end:4 }, { id:'b', start:6, end:50.2 }] });
-type Case = { suite?: 'ordered' | 'numeric' | 'natural'; text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
+type Case = { suite?: 'ordered' | 'numeric' | 'natural' | 'splits'; text: string; edits?: Edits; time?: number; selectedClip?: string; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
 const changedClips = () => ({...base(),clips:[
   {id:'a',start:0,end:10,speed:2,zoom:{scale:2,x:.5,y:.5}},
   {id:'b',start:10,end:50.2,speed:3,zoom:{scale:3,x:0,y:0}},
 ]});
+const trimmedFiveClips = () => ({...base(),clips:[
+  {id:'a',start:15,end:17,speed:1},{id:'b',start:17,end:23,speed:2},
+  {id:'c',start:23,end:35,speed:2},{id:'d',start:35,end:39,speed:2},{id:'e',start:39,end:50.2,speed:2},
+]});
+const thirdSplit = (end=25) => (e:Edits) => assert.deepEqual(e.clips.map(c=>[c.start,c.end,c.speed]),[[15,17,1],[17,23,2],[23,end,2],[end,35,2],[35,39,2],[39,50.2,2]]);
 const cases: Case[] = [
+  {suite:'splits',text:'split clip 3 after 1 seconds',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split clip 3 after 1 seconds',edits:trimmedFiveClips(),time:8,check:thirdSplit()},
+  {suite:'splits',text:'split clip 3 after one second',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split clip 3 one second in',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split clip 3 at 1 second',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split the third clip 1 second after its start',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split this clip after 1 second',edits:trimmedFiveClips(),selectedClip:'c',time:0,check:thirdSplit()},
+  {suite:'splits',text:'split the last clip after 1 second',edits:trimmedFiveClips(),time:0,check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[15,17],[17,23],[23,35],[35,39],[39,41],[41,50.2]])},
+  {suite:'splits',text:'split clip 3 one second before its end',edits:trimmedFiveClips(),time:0,check:thirdSplit(33)},
+  {suite:'splits',text:'split clip 3 at timeline time 6 seconds',edits:trimmedFiveClips(),time:0,check:thirdSplit()},
+  {suite:'splits',text:'split clip 3 one second after the playhead',edits:trimmedFiveClips(),time:7,check:thirdSplit(29)},
+  {suite:'splits',text:'split clip 3 one second after the playhead',edits:trimmedFiveClips(),time:0,rejected:true,error:/outside clip 3/},
+  {suite:'splits',text:'split 1 second after',edits:trimmedFiveClips(),time:0,check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[15,16],[16,17],[17,23],[23,35],[35,39],[39,50.2]])},
+  {suite:'splits',text:'split clip 3 at 1 and 3 seconds',edits:trimmedFiveClips(),time:0,check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[15,17],[17,23],[23,25],[25,29],[29,35],[35,39],[39,50.2]])},
+  {suite:'splits',text:'split clip 3 after 1 second then split the right part after 1 second',edits:trimmedFiveClips(),time:0,check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[15,17],[17,23],[23,25],[25,27],[27,35],[35,39],[39,50.2]])},
+  {suite:'splits',text:'make clip 3 4x faster then split it after 1 second',edits:trimmedFiveClips(),time:0,check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end,c.speed]),[[15,17,1],[17,23,2],[23,27,4],[27,35,4],[35,39,2],[39,50.2,2]])},
+  {suite:'splits',text:'split clip 3 after 7 seconds',edits:trimmedFiveClips(),time:0,rejected:true,error:/outside clip 3/},
   { suite:'natural', text:'For clip 1: 2x zoom, 0.5x speed', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[2,.5],[1,1]]) },
   { suite:'natural', text:'Can clip 1 be twice as fast with a 1.5x zoom toward the upper left?', edits:twoClips(), check:e=>{assert.equal(e.clips[0].speed,2);assert.deepEqual(e.clips[0].zoom,{scale:1.5,x:0,y:0});assert.equal(e.clips[1].speed,1);} },
   { suite:'natural', text:'take two seconds off the beginning and three seconds off the end', check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end]),[[2,47.2]]) },
@@ -67,19 +89,20 @@ const cases: Case[] = [
   { text:'mute the audio and add subtitles', rejected:true },
 ];
 let failures=0, windowStart=Date.now();
-const selected=process.env.PROMPT_SUITE?cases.filter(c=>c.suite===process.env.PROMPT_SUITE):cases;
+const match=process.env.PROMPT_MATCH?new RegExp(process.env.PROMPT_MATCH):null;
+const selected=cases.filter(c=>(!process.env.PROMPT_SUITE||c.suite===process.env.PROMPT_SUITE)&&(!match||match.test(c.text)));
 for (const [i, item] of selected.entries()) {
   if(i&&i%25===0){const delay=Math.max(0,61000-(Date.now()-windowStart));if(delay){console.log('Waiting for the preview request window…');await new Promise(resolve=>setTimeout(resolve,delay));}windowStart=Date.now();}
   const edits = item.edits ?? base(), start = performance.now();
   const response = await fetch(`${process.env.SNIP_URL || 'http://127.0.0.1:52947'}/api/edit`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:item.text,requestId:`prompt-test-${i}`,sessionId:'live-acceptance',revision:0,project:{duration:50.2,edits,selectedClip:edits.clips[0].id,time:item.time ?? 7.6}}),
+    body:JSON.stringify({text:item.text,requestId:`prompt-test-${i}`,sessionId:'live-acceptance',revision:0,project:{duration:50.2,edits,selectedClip:item.selectedClip ?? edits.clips[0].id,time:item.time ?? 7.6}}),
   });
   const result=await response.json();
   try {
     if(item.rejected) {assert.equal(response.status,422);assert.equal(result.ok,false);assert.equal(typeof result.error.code,'string');if(item.error)assert.match(result.error.message,item.error);}
     else {assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.ok,true);assert(Array.isArray(result.changes));item.check!(applyCommands(edits,result.batch.commands,50.2));}
     console.log(`PASS ${item.text} (${Math.round(performance.now()-start)}ms)${item.edits?' [edited timeline]':''}`);
-  } catch(error) {failures++;console.error(`FAIL ${item.text}: ${error instanceof Error?error.message:error}`);}
+  } catch(error) {failures++;console.error(`FAIL ${item.text}: ${error instanceof Error?error.message:error}`);console.error('Returned changes:',JSON.stringify(result.changes ?? result.error));}
 }
 assert.equal(failures,0,`${failures} live prompt checks failed`);

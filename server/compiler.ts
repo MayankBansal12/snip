@@ -16,7 +16,7 @@ export function compileChanges(request: ChatRequest, changes: Change[]): ChatRes
   const commands:Command[]=[], summaries:string[]=[];
   const results=new Map<string,{left:string;right:string}>();
   let latest:string|undefined;
-  const splitScopes=new Map<string,{origin:number;length:number;limited:boolean}>();
+  const splitScopes=new Map<string,{origin:number;length:number;limited:boolean;clipNumber?:number}>();
   const run=(command:Command)=>{edits=applyCommands(edits,[command],request.project.duration);commands.push(command);};
   const newId=()=>{let id:string;do{id=`chat-${request.requestId.slice(0,80)}-${++serial}`;}while(edits.clips.some(c=>c.id===id));return id;};
   const startOf=(id:string)=>{const i=edits.clips.findIndex(c=>c.id===id);return edits.clips.slice(0,i).reduce((n,c)=>n+clipDuration(c,edits),0);};
@@ -92,16 +92,16 @@ export function compileChanges(request: ChatRequest, changes: Change[]): ChatRes
         case 'split':{
           const duration=sequenceDuration(edits), group=change.result.split('_')[0];
           let scope=splitScopes.get(group);
-          if(!scope){const selected=change.clip==='all'?undefined:one(change.clip);scope={origin:selected?startOf(selected.id):0,length:selected?clipDuration(selected,edits):duration,limited:!!selected};splitScopes.set(group,scope);}
+          if(!scope){const selected=change.clip==='all'?undefined:one(change.clip);scope={origin:selected?startOf(selected.id):0,length:selected?clipDuration(selected,edits):duration,limited:!!selected,clipNumber:selected?edits.clips.findIndex(c=>c.id===selected.id)+1:undefined};splitScopes.set(group,scope);}
           const {origin,length}=scope;
-          const position=round(change.at.from==='half'?origin+length/2:change.at.from==='playhead'?request.project.time+change.at.seconds:change.at.from==='clipEnd'?origin+length+change.at.seconds:origin+change.at.seconds);
+          const position=round(change.at.from==='half'?origin+length/2:change.at.from==='playhead'?request.project.time+change.at.seconds:change.at.from==='clipEnd'?origin+length+change.at.seconds:change.at.from==='clipStart'?origin+change.at.seconds:change.at.seconds);
           if(position<=0||position>=duration)throw new EditError(`That split lands at ${position}s, outside the video. Choose a point between 0s and ${round(duration)}s.`);
-          if(scope.limited&&(position<=origin||position>=origin+length))throw new EditError('That split falls outside the requested clip. Nothing was changed.');
+          if(scope.limited&&(position<=origin||position>=origin+length))throw new EditError(`That split lands at ${position}s, outside clip ${scope.clipNumber} (${round(origin)}–${round(origin+length)}s on the timeline). Nothing was changed.`);
           const point=toSourceTime(position,edits),clip=edits.clips[point.index];
           if(Math.abs(point.time-clip.start)<1e-7)throw new EditError(`There’s already a split at ${position}s. Choose another point.`);
           const right=newId();run({action:'splitClip',clipId:clip.id,sourceTime:point.time,rightClipId:right});
           results.set(change.result,{left:clip.id,right});latest=change.result;previous=[right];
-          summaries.push(`split at ${position}s${change.at.from==='playhead'&&change.at.seconds?` (${Math.abs(change.at.seconds)}s ${change.at.seconds>0?'after':'before'} the playhead)`:''}`);break;
+          summaries.push(`split at ${position}s${change.at.from==='playhead'&&change.at.seconds?` (${Math.abs(change.at.seconds)}s ${change.at.seconds>0?'after':'before'} the playhead)`:change.at.from==='clipStart'&&scope.limited?` (${change.at.seconds}s into clip ${scope.clipNumber})`:''}`);break;
         }
         case 'trim':trim(change.clip,change.range);break;
         case 'speed':{

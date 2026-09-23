@@ -116,6 +116,39 @@ try {
   await waitSaved(e => e.clips.length === 1);
   console.log('PASS plain split prompt');
 
+  // Named clip offsets are local playback seconds, even with the playhead on clip 1.
+  await page.getByRole('button', {name:'switch to editor',exact:true}).click();
+  await playhead.press('Home');
+  for (let i=0;i<2;i++) await playhead.press('Shift+ArrowRight');
+  await splitButton.click();
+  await playhead.press('Home');
+  for (let i=0;i<4;i++) await playhead.press('Shift+ArrowRight');
+  await splitButton.click();
+  await page.getByRole('button', {name:'speed 1×',exact:true}).click();
+  await page.getByRole('button', {name:'2×',exact:true}).click();
+  await page.getByRole('button', {name:'close speed',exact:true}).click();
+  await playhead.press('Home');
+  await page.getByRole('button', {name:'switch to chat',exact:true}).click();
+  const localSplit = await submit('split clip 3 after 1 seconds');
+  assert.equal(localSplit.status,200,JSON.stringify(localSplit.result));
+  assert.deepEqual(localSplit.result.changes[0].at,{from:'clipStart',seconds:1});
+  const localClips=await waitSaved(e=>e.clips.length===4);
+  assert.deepEqual(localClips.clips.map(c=>[c.start,c.end,c.speed]),[[0,2,1],[2,4,1],[4,6,2],[6,8,2]]);
+  assert.match(await status.innerText(),/split at 5s.*1s into clip 3/);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e=>e.clips.length===3 && e.clips[2].speed===2);
+  await chat.getByRole('button', {name:'redo',exact:true}).click();
+  await waitSaved(e=>e.clips.length===4);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e=>e.clips.length===3);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e=>e.clips[2].speed===1);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e=>e.clips.length===2);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e=>e.clips.length===1);
+  console.log('PASS reported clip-relative split at 2x speed, unrelated playhead and atomic undo/redo');
+
   // Read the actual paused video time, even if React's last playback tick differs.
   await page.locator('.source-window video').evaluate(v => { v.currentTime = 1.25; });
   await page.waitForFunction(() => { const v = document.querySelector('.source-window video'); return v.currentTime === 1.25 && !v.seeking; });
