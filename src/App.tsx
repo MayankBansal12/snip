@@ -1,3 +1,6 @@
+import { getFrameIndex, inspectExport } from './media-analysis';
+import { boundary, frameAt, nearestBoundary, previewTimestamp, retainedFrames, stepBoundary, trimBoundary, preciseTime } from './frame-timing';
+import type { FrameIndex } from './frame-timing';
 import { applyCommands, compileTimeline, createSpecification, EditSession, normalizeEdits, object } from './engine';
 import type { Command } from './engine';
 import { identifySource } from './engine/source';
@@ -5,11 +8,11 @@ import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
 import AgentOnboarding from './components/AgentOnboarding';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, StepBack, StepForward, Film, FolderOpen, Maximize2, Moon, Pause, Play, Plus, Sun, Volume2, VolumeX, X } from 'lucide-react';
 import { cancelExport, exportVideo } from './export';
 import { createPlayback } from './playback';
 import { clearProject, restoreProject, saveEdits, saveProject, saveSource } from './storage';
-import { defaultZoom, zoomPresets, trimBounds, clamp, speedPresets, canMergeClips, clipDuration, clipSpeed, defaults, formatTime, migrateEdits, sequenceDuration, toSequenceTime, toSourceTime, uid } from './types';
+import { defaultZoom, zoomPresets, trimBounds, clamp, speedPresets, canMergeClips, clipDuration, clipSpeed, defaults, migrateEdits, sequenceDuration, toSequenceTime, toSourceTime, uid } from './types';
 import type { Clip, Edits, Source } from './types';
 import { readMetadata, thumbnails } from './media';
 import { createProjectFile, readProjectFile, MAX_VIDEO_SIZE } from './project-file';
@@ -51,6 +54,10 @@ export default function App(){
   useEffect(()=>{const down=()=>{pointerActive.current=true;},up=()=>{pointerActive.current=false;};window.addEventListener('pointerdown',down,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);window.addEventListener('blur',up);return()=>{window.removeEventListener('pointerdown',down,true);window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',up,true);window.removeEventListener('blur',up);};},[]);
   const [actionsOpen,setActionsOpen]=useState(false),[showShortcuts,setShowShortcuts]=useState(false),[showMenu,setShowMenu]=useState(false),[timelineZoom,setTimelineZoom]=useState(1);
   const [source,setSource]=useState<Source|null>(null),[edits,setEdits]=useState<Edits>(()=>defaults(0));
+  const [frameState,setFrameState]=useState<{file:Blob;index:FrameIndex|null;error:string}|null>(null);
+  const frameIndex=frameState?.file===source?.file?frameState?.index:null;
+  const indexing=!!source&&frameState?.file!==source.file;
+  useEffect(()=>{if(!source){setFrameState(null);return;}let active=true;getFrameIndex(source).then(index=>{if(active)setFrameState({file:source.file,index,error:''});}).catch(error=>{if(active)setFrameState({file:source.file,index:null,error:error instanceof Error?error.message:'Frame indexing unavailable.'});});return()=>{active=false;};},[source?.file]);
   const editsRef=useRef(edits);editsRef.current=edits;
   const [url,setUrl]=useState(''),[ready,setReady]=useState(false),[loading,setLoading]=useState(false);
   const [notice,setNotice]=useState(''),[projectDownload,setProjectDownload]=useState<Download|null>(null);
@@ -97,13 +104,34 @@ export default function App(){
     activeClip.current=index;setTime(toSequenceTime(sourceTime,next,index));setSelectedClip(old=>next.clips.some(c=>c.id===old)?old:next.clips[index].id);
   },[]);
   const update=useCallback((patch:Partial<Edits>,record=true)=>{if(!source||exportLock.current)return;const next=normalizeEdits({...editsRef.current,...(patch.crop?{resolution:'original'}:{}),...patch},source.duration);if(record)checkpoint();apply(next);},[apply,checkpoint,source]);
-  const command=useCallback((commands:Command[],record=true)=>{if(!source||exportLock.current)return;const next=applyCommands(editsRef.current,commands,source.duration);if(record)checkpoint();apply(next);},[apply,checkpoint,source]);
+  const command=useCallback((commands:Command[],record=true)=>{if(!source||exportLock.current)return;const next=applyCommands(editsRef.current,commands,source.duration,frameIndex);if(record)checkpoint();apply(next);},[apply,checkpoint,source,frameIndex]);
   const undo=useCallback(()=>{const h=history.current;if(!h.past.length)return;pausePlayback();h.future.push(structuredClone(editsRef.current));apply(h.past.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
   const redo=useCallback(()=>{const h=history.current;if(!h.future.length)return;pausePlayback();h.past.push(structuredClone(editsRef.current));apply(h.future.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
-  const seek=useCallback((position:number)=>{const e=editsRef.current,p=toSourceTime(position,e);pausePlayback();if(videoRef.current)videoRef.current.currentTime=p.time;activeClip.current=p.index;if(videoRef.current)videoRef.current.playbackRate=clipSpeed(e.clips[p.index],e);setSelectedClip(e.clips[p.index].id);setTime(toSequenceTime(p.time,e,p.index));},[pausePlayback]);
+  const seek=useCallback((position:number)=>{
+    const e=editsRef.current,p=toSourceTime(position,e),clip=e.clips[p.index];pausePlayback();
+    const range=frameIndex?retainedFrames(frameIndex,clip):null;
+    const frame=frameIndex&&range&&range.after>range.first?frameAt(frameIndex,p.time,clip):null;
+    const logical=frameIndex&&frame!==null?boundary(frameIndex,frame):p.time;
+    if(videoRef.current){videoRef.current.currentTime=frameIndex&&frame!==null?previewTimestamp(frameIndex,frame):p.time;videoRef.current.playbackRate=clipSpeed(clip,e);}
+    activeClip.current=p.index;setSelectedClip(clip.id);setTime(toSequenceTime(logical,e,p.index));
+  },[pausePlayback,frameIndex]);
+  const stepFrame=(direction:number)=>{
+    if(!frameIndex)return;
+    const e=editsRef.current;let i=activeClip.current,clip=e.clips[i];
+    let range=retainedFrames(frameIndex,clip);if(range.after<=range.first)return;
+    let frame=frameAt(frameIndex,videoRef.current?.currentTime??clip.start,clip)+direction;
+    if(frame<range.first&&i>0){clip=e.clips[--i];range=retainedFrames(frameIndex,clip);frame=range.after-1;}
+    else if(frame>=range.after&&i<e.clips.length-1){clip=e.clips[++i];range=retainedFrames(frameIndex,clip);frame=range.first;}
+    if(range.after<=range.first)return;
+    seek(toSequenceTime(boundary(frameIndex,clamp(frame,range.first,range.after-1)),e,i));
+  };
   const togglePlayback=useCallback(()=>{if(!busy)playback.current?.toggle();},[busy]);
-  const splitLocation=toSourceTime(time,edits),at=edits.clips[splitLocation.index];const canSplit=!!at&&splitLocation.time-at.start>=.1&&at.end-splitLocation.time>=.1;
-  const split=useCallback(()=>{const e=editsRef.current,position=toSourceTime(time,e),c=e.clips[position.index];if(position.time-c.start<.1||c.end-position.time<.1)return;pausePlayback();const rightId=uid();command([{action:'splitClip',clipId:c.id,sourceTime:position.time,rightClipId:rightId}]);setSelectedClip(rightId);},[time,command,pausePlayback]);
+  const splitLocation=toSourceTime(time,edits),at=edits.clips[splitLocation.index];
+  const selectedRange=frameIndex&&at?retainedFrames(frameIndex,at):null;
+  const sourceFrame=frameIndex&&selectedRange&&selectedRange.after>selectedRange.first?frameAt(frameIndex,splitLocation.time,at):null;
+  const splitTime=frameIndex?nearestBoundary(frameIndex,splitLocation.time):splitLocation.time;
+  const canSplit=!indexing&&!!at&&(frameIndex?splitTime>at.start+1e-7&&splitTime<at.end-1e-7:splitTime-at.start>=.1&&at.end-splitTime>=.1);
+  const split=()=>{if(!canSplit)return;pausePlayback();const rightId=uid();command([{action:'splitClip',clipId:at.id,sourceTime:splitTime,rightClipId:rightId}]);setSelectedClip(rightId);};
   const deleteClip=useCallback(()=>{const e=editsRef.current;pausePlayback();setActionsOpen(false);if(e.clips.length<2){setConfirmClear(true);return;}command([{action:'deleteClip',clipId:selectedClip}]);},[selectedClip,command,pausePlayback]);
   const openExport=()=>{if(!source||busy||loading)return;pausePlayback();setDownload(null);setError('');setShowExport(true);};
   const expandPreview=()=>{if(document.fullscreenElement)void document.exitFullscreen();else void previewRef.current?.requestFullscreen?.().catch(()=>{});};
@@ -131,9 +159,11 @@ export default function App(){
     seek(direction>0?(cuts.find(t=>t>position+.01)??cuts.at(-1)!):([...cuts].reverse().find(t=>t<position-.01)??0));
   };
   const trimAtPlayhead=(edge:'start'|'end')=>{
-    const e=editsRef.current,p=toSourceTime(toSequenceTime(videoRef.current?.currentTime??0,e,activeClip.current),e),c=e.clips[p.index];
-    if(edge==='start'?(p.time-c.start<.001||c.end-p.time<.1):(c.end-p.time<.001||p.time-c.start<.1))return;
-    pausePlayback();command([{action:'trimClip',clipId:c.id,sourceStart:edge==='start'?p.time:c.start,sourceEnd:edge==='end'?p.time:c.end}]);
+    if(indexing)return;
+    const e=editsRef.current,p=toSourceTime(time,e),c=e.clips[p.index];
+    const value=frameIndex?trimBoundary(frameIndex,c,edge,p.time,trimBounds(e.clips,c,source!.duration)):p.time;
+    if(edge==='start'?(value<=c.start||c.end-value<(frameIndex?1e-7:.1)):(value>=c.end||value-c.start<(frameIndex?1e-7:.1)))return;
+    pausePlayback();command([{action:'trimClip',clipId:c.id,sourceStart:edge==='start'?value:c.start,sourceEnd:edge==='end'?value:c.end}]);
   };
   const resetTrim=()=>{
     const e=editsRef.current;
@@ -149,21 +179,21 @@ export default function App(){
     pausePlayback();command([{action:'reorderClips',clipIds:clips.map(c=>c.id)}]);seek(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
   };
   const nudgeTrim=(edge:'start'|'end',direction:number)=>{
-    if(!source)return;
+    if(!source||indexing)return;
     const e=editsRef.current,c=e.clips.find(c=>c.id===selectedClip);if(!c)return;
     const bounds=trimBounds(e.clips,c,source.duration),minimum=Math.min(.1,source.duration/2);
-    const value=clamp(c[edge]+direction*.1,edge==='start'?bounds.start:c.start+minimum,edge==='end'?bounds.end:c.end-minimum);
+    const value=frameIndex?trimBoundary(frameIndex,c,edge,stepBoundary(frameIndex,c[edge],direction),bounds):clamp(c[edge]+direction*.1,edge==='start'?bounds.start:c.start+minimum,edge==='end'?bounds.end:c.end-minimum);
     if(value===c[edge])return;
     pausePlayback();changeClip({[edge]:value});
   };
   const cycle=(presets:readonly number[],value:number,direction:number)=>(direction>0?presets.find(p=>p>value):[...presets].reverse().find(p=>p<value))??(direction>0?presets[0]:presets[presets.length-1]);
-  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||!ready||showExport||showShortcuts||confirmClear||showMenu||actionsOpen,
+  useEditorShortcuts({hasVideo:!!source,blocked:busy||loading||indexing||!ready||showExport||showShortcuts||confirmClear||showMenu||actionsOpen,
     focusClip:direction=>{
       const e=editsRef.current,index=e.clips.findIndex(c=>c.id===selectedClip),next=clamp(index+direction,0,e.clips.length-1);
       seek(e.clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
       document.querySelector<HTMLElement>(`[data-clip-id="${CSS.escape(e.clips[next].id)}"]`)?.focus({preventScroll:true});
     },
-    play:togglePlayback,seekBy:seconds=>seek(toSequenceTime(videoRef.current?.currentTime??0,editsRef.current,activeClip.current)+seconds),seekEdge:end=>seek(end?sequenceDuration(editsRef.current):0),seekCut,
+    play:togglePlayback,stepFrame,seekBy:seconds=>seek(toSequenceTime(videoRef.current?.currentTime??0,editsRef.current,activeClip.current)+seconds),seekEdge:end=>seek(end?sequenceDuration(editsRef.current):0),seekCut,
     split,remove:deleteClip,trim:trimAtPlayhead,undo,redo,mute:()=>update({muted:!editsRef.current.muted}),
     speed:direction=>{const e=editsRef.current,c=e.clips.find(c=>c.id===selectedClip);if(c)changeClip({speed:cycle(speedPresets,clipSpeed(c,e),direction)});},
     clipZoom:direction=>{const c=editsRef.current.clips.find(c=>c.id===selectedClip);if(c){const zoom=c.zoom??defaultZoom;changeClip({zoom:{...zoom,scale:cycle(zoomPresets,zoom.scale,direction)}});}},
@@ -214,13 +244,14 @@ export default function App(){
     exportLock.current=true;
     if(!exportJob.current||exportJob.current.status!=='running')exportJob.current={id:uid(),sessionId:session.current.sessionId,revision:session.current.revision,status:'running',progress:0};
     const job=exportJob.current;
-    try{const blob=await exportVideo(source,exportEdits,(fraction,label)=>{job.progress=fraction;setProgress(fraction);setStage(label);});if(cancelled.current)return;const next={url:URL.createObjectURL(blob),name:`${source.name.replace(/\.[^.]+$/,'')}-snip.${exportEdits.format}`,size:blob.size};setDownload(next);Object.assign(job,{status:'complete',progress:1,name:next.name,size:next.size});const a=document.createElement('a');a.href=next.url;a.download=next.name;document.body.appendChild(a);a.click();a.remove();}
+    try{const blob=await exportVideo(source,exportEdits,(fraction,label)=>{job.progress=fraction;setProgress(fraction);setStage(label);});if(cancelled.current)return;setStage('Checking export details');const details=await inspectExport(blob);if(cancelled.current)return;const next={details,url:URL.createObjectURL(blob),name:`${source.name.replace(/\.[^.]+$/,'')}-snip.${exportEdits.format}`,size:blob.size};setDownload(next);Object.assign(job,{status:'complete',progress:1,name:next.name,size:next.size,details});const a=document.createElement('a');a.href=next.url;a.download=next.name;document.body.appendChild(a);a.click();a.remove();}
     catch(err){if(!cancelled.current){const message=err instanceof Error?err.message:'export failed. try a smaller resolution.';Object.assign(job,{status:'failed',error:message});setError(message);}}finally{exportLock.current=false;setBusy(false);}
   }
   const stopExport=()=>{cancelled.current=true;if(exportJob.current)exportJob.current.status='cancelled';cancelExport();setProgress(0);};
   const removeProject=async()=>{try{await clearProject();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
   const ensureEditable=()=>{
     if(!source||!ready)throw new Error('Open a video in the editor first.');
+    if(indexing)throw new Error('Indexing source frames. Try again shortly.');
     if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
     return source;
   };
@@ -239,12 +270,12 @@ export default function App(){
       const currentSession=session.current,info=await identifySource(currentSource);
       if(currentSession!==session.current)throw new Error('Project changed. Read it again.');
       const plan=compileTimeline(currentSource,editsRef.current);
-      return {sessionId:currentSession.sessionId,revision:currentSession.revision,specification:createSpecification(info,plan.edits),timeline:plan.clips,duration:plan.duration,output:plan.output};
+      return {sessionId:currentSession.sessionId,revision:currentSession.revision,specification:createSpecification(info,plan.edits),timeline:plan.clips,duration:plan.duration,output:plan.output,frameTiming:{available:!!frameIndex,frameCount:frameIndex?.times.length??null,trimPolicy:frameIndex?'nearest source-frame boundary; end exclusive':'timestamp trimming; frame indexing unavailable'}};
     }
     if(method==='apply_edits'){
       if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying agent edits.');
       if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu)throw new Error('Close the editor dialog or clip controls before applying agent edits.');
-      const result=session.current.apply(params,editsRef.current,currentSource.duration);
+      const result=session.current.apply(params,editsRef.current,currentSource.duration,frameIndex);
       if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);setNotice('agent edits applied');}
       return {sessionId:session.current.sessionId,revision:result.revision,currentRevision:session.current.revision,duplicate:result.duplicate};
     }
@@ -293,7 +324,7 @@ export default function App(){
           <Button variant="outline" aria-label="select your video" aria-describedby="upload-hint" aria-busy={loading || !ready} disabled={!ready || loading} onClick={() => inputRef.current?.click()} className="mt-10 h-44 w-full flex-col gap-3 rounded-2xl border-dashed border-primary/45 bg-card font-normal shadow-none sm:h-52">
             {loading || !ready ? <Spinner className="mb-1 size-6" /> : <Plus className="mb-1 size-6 text-warning-foreground dark:text-primary" strokeWidth={1.5} />}
             <span className="inline-flex items-center gap-2 text-base leading-none text-warning-foreground sm:text-lg sm:leading-none dark:text-primary">{loading ? 'opening your file…' : !ready ? 'getting things ready…' : 'select your video'}{ready && !loading && <ArrowUpRight className="mx-0! size-[1em]" aria-hidden="true" />}</span>
-            <span id="upload-hint" className="text-sm text-muted-foreground">or paste or drag and drop here</span>
+            <span id="upload-hint" className="text-sm text-muted-foreground">or paste or drag and drop here · up to 500 MB</span>
           </Button>
           <div className="mt-4 flex flex-col items-center gap-4 sm:mt-5 sm:gap-5">
             <span className="text-sm text-muted-foreground">or</span>
@@ -304,22 +335,23 @@ export default function App(){
       </div>
       <footer className="flex items-center justify-center gap-3 px-6 pb-5 text-xs text-muted-foreground"><span>free</span><span aria-hidden="true" className="size-1 shrink-0 rounded-full bg-primary" /><span>no-watermark</span><span aria-hidden="true" className="size-1 shrink-0 rounded-full bg-primary" /><span>local in browser</span></footer>
     </main> : <main className="editor mx-auto w-full max-w-6xl px-4 pb-6 sm:px-8">
-      <div className="workspace" inert={loading || busy}>
+      <div className="workspace" inert={loading || busy || indexing}>
         <section ref={previewRef} aria-label="video preview" className="preview-panel">
           <Preview playing={playing} time={time} editing={actionsOpen} source={source} edits={edits} clip={edits.clips[activeClip.current]} url={url} videoRef={videoRef} onLoaded={() => { const v = videoRef.current; if (v) { v.currentTime = editsRef.current.clips[0].start; v.playbackRate = clipSpeed(editsRef.current.clips[0],editsRef.current); v.muted = editsRef.current.muted; activeClip.current = 0; setTime(0); } }} onToggle={togglePlayback} />
           <div className="player flex items-center justify-between gap-3 py-4">
-            <div className="flex items-center gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><span className="play-time whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{formatTime(time)}</span> / {formatTime(duration)}</span></div>
+            <div className="flex items-center gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><IconButton label="previous frame" disabled={!frameIndex} onClick={()=>stepFrame(-1)}><StepBack /></IconButton><IconButton label="next frame" disabled={!frameIndex} onClick={()=>stepFrame(1)}><StepForward /></IconButton><span className="play-time whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{preciseTime(time)}</span> / {preciseTime(duration)}</span></div>
             <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
+          <div className="pb-3 text-xs text-muted-foreground">{indexing?'indexing source frames…':frameIndex&&sourceFrame!==null?<span title="Trims snap to original video frames. The end boundary is exclusive.">{`source ${preciseTime(boundary(frameIndex,sourceFrame))} · frame ${sourceFrame+1} / ${frameIndex.times.length}`}</span>:<details><summary className="cursor-pointer">frame precision unavailable · timestamp trimming</summary><p className="mt-2">{frameState?.error||'This clip contains no source frames. Extend its boundaries.'}</p></details>}</div>
         </section>
-        <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
+        <Timeline frameIndex={frameIndex??null} onFrameStep={stepFrame} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
       </div>
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}
     </main>}
     <AlertDialog open={!!agentToken} onOpenChange={open=>{if(!open)setAgentToken(null);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription>The local agent can read edit settings, change the open project, and start a browser export. Video bytes stay in this browser. Choose a video here after connecting.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>cancel</AlertDialogClose><Button onClick={()=>{try{disconnectAgent.current?.();disconnectAgent.current=connectAgent(agentToken!, (method,params)=>agentHandler.current(method,params),setAgentStatus);setAgentToken(null);}catch(e){setError(e instanceof Error?e.message:'Connection failed.');setAgentToken(null);}}}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
     <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
-    <ExportDialog open={showExport} source={source} edits={edits} busy={busy} progress={progress} stage={stage} download={download} error={error} onUpdate={update} onClose={() => setShowExport(false)} onExport={() => void startExport()} onCancel={stopExport} />
+    <ExportDialog onSaveProject={downloadProject} open={showExport} source={source} edits={edits} busy={busy} progress={progress} stage={stage} download={download} error={error} onUpdate={update} onClose={() => setShowExport(false)} onExport={() => void startExport()} onCancel={stopExport} />
     <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>clear this video?</AlertDialogTitle><AlertDialogDescription>this removes the video and edits saved in this browser. your original file stays yours.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>keep editing</AlertDialogClose><Button variant="destructive" onClick={() => void removeProject()}>clear video</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
   </div></TooltipProvider>;
 }

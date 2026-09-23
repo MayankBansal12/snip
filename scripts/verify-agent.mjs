@@ -45,7 +45,7 @@ try {
   await page.getByRole('alertdialog').waitFor({state:'hidden'});
   log('Same-tab pairing reconnects with explicit consent and clears the token');
   await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
-  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
+  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2 && !document.querySelector('.workspace')?.inert);
   // Trim handles stop propagation and retain a clip snapshot while dragging.
   let dragProject=await call('get_project');
   const handle=await page.getByRole('slider',{name:'Clip 1 start',exact:true}).boundingBox();
@@ -99,7 +99,7 @@ try {
     const result=await download,path=`${out}/export-${i}.mp4`;assert.equal(result.suggestedFilename().endsWith('.mp4'),true);
     const bytes=await page.evaluate(async()=>{const a=document.querySelector('a[download]');if(!a)throw new Error('Missing download link');return Array.from(new Uint8Array(await (await fetch(a.href)).arrayBuffer()));});
     writeFileSync(path,Buffer.from(bytes));files.push(path);
-    const status=await call('get_export_status');assert.equal(status.status,'complete');assert(status.size>100);
+    const status=await call('get_export_status');assert.equal(status.status,'complete');assert(status.size>100);assert.equal(status.details.width,320);assert.equal(status.details.height,180);assert(Math.abs(status.details.duration-project.duration)<.1);await page.getByText('video details',{exact:true}).click();assert(await page.getByRole('dialog').getByText('AVC',{exact:true}).isVisible());assert(status.details.frameCount>0);assert(status.details.audio.sampleRate>0);
     await button('back to editing').click();
   }
   const ffmpeg=process.env.FFMPEG_PATH,ffprobe=process.env.FFPROBE_PATH;
@@ -139,18 +139,13 @@ try {
   await button('back to editing').click();await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   project=await call('get_project');
-  await call('apply_edits',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-trim',commands:[
+  const beforeTiny=project;
+  await assert.rejects(()=>call('apply_edits',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-trim',commands:[
     {action:'deleteClip',clipId:'demo'},
     {action:'trimClip',clipId,sourceStart:1.001,sourceEnd:1.002},
-    {action:'setSpeed',clipId,speed:2},
-    {action:'setOutput',format:'mp4',muted:false},
-  ]});
-  project=await call('get_project');let unexpectedDownload=false;
-  page.on('download',()=>{unexpectedDownload=true;});
-  await call('start_export',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-export'});
-  let tinyJob;for(let i=0;i<240;i++){tinyJob=await call('get_export_status');if(tinyJob.status!=='running')break;await page.waitForTimeout(250);}
-  assert.equal(tinyJob.status,'failed');assert.match(tinyJob.error,/no readable video/);assert.equal(unexpectedDownload,false);
-  assert.deepEqual((await call('get_project')).specification.edits,project.specification.edits);
-  log('A sub-frame trim cannot report a successful audio-only video export');
+  ]}));
+  project=await call('get_project');assert.equal(project.revision,beforeTiny.revision);
+  assert.deepEqual(project.specification.edits,beforeTiny.specification.edits);
+  log('Sub-frame ranges are rejected atomically before export');
   assert.deepEqual(errors,[]);writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2));
 } finally {await client.close();await context.close();await browser.close();await proxy?.close();}

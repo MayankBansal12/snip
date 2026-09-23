@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:browser": "node scripts/verify.mjs",
+    "test:frames": "node scripts/verify-frames.mjs",
     "test:keyboard": "node scripts/verify-keyboard-editor.mjs",
-    "test:engine": "tsx --test tests/engine.test.ts",
+    "test:engine": "tsx --test tests/engine.test.ts tests/frame-timing.test.ts",
     "test:agent": "node scripts/verify-agent.mjs",
     "mcp": "node scripts/mcp-server.mjs",
     "test:bridge": "node --test tests/bridge.test.mjs"

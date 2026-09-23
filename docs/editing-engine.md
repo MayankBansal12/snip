@@ -58,10 +58,10 @@ A VM-only unattended render still needs a browser runtime today. For automated t
 ## Agent tools
 
 - `get_connection`: pairing URL and connection status.
-- `get_project`: session ID, revision, specification, source/sequence timeline, duration, and output dimensions.
+- `get_project`: session ID, revision, specification, source/sequence timeline, duration, output dimensions, and `frameTiming` availability/count/policy.
 - `apply_edits`: `{ sessionId, revision, requestId, commands }`. Supported actions: `splitClip`, `trimClip`, `setSpeed`, `setZoom`, `deleteClip`, `mergeClips`, `reorderClips`, `setOutput`. Tool discovery provides full schemas. Splits require an explicit unique `rightClipId`; merge joins the next timeline neighbor. A batch is one undo step.
 - `start_export`: `{ sessionId, revision, requestId }`; returns a job immediately.
-- `get_export_status`: latest job status (`running`, `complete`, `failed`, `cancelled`), progress, and output filename/size.
+- `get_export_status`: latest job status (`running`, `complete`, `failed`, `cancelled`), progress, output filename/size, and measured `details` (duration, dimensions, frame count/rate, codec, audio).
 
 Always read the current session/revision first. Human edits and undo/redo advance revision; opening a project starts a new session. Dialogs, pointer interactions, and exports block agent mutations. After a timeout, retry the identical payload with the same request ID. Edit receipts are retained for the session, capped at 10,000 requests without eviction. Export retries never create another render; only the latest matching job is returned.
 
@@ -70,9 +70,9 @@ To smoke-test with an eight-second video: split at second 4 and set the second c
 ## Rendering contract
 
 - Same edits and explicit commands produce the same edit state. Times are fractional source seconds, starts inclusive and ends exclusive. Timeline order follows the clips array; duration is the sum of `(end - start) / speed`.
-- Clips must have positive duration and cannot overlap in the source (tolerance: 1e-7 seconds). Splits leave at least 0.1 seconds on each side. At least one clip must remain. Very short ranges may contain no video frames; export verifies a decoded video frame and fails rather than downloading an audio-only result.
+- Clips must have positive duration and cannot overlap in the source (tolerance: 1e-7 seconds). When source frames can be indexed, UI and agent trims/splits snap to the nearest presentation timestamp (ties go earlier), and splits leave at least one source frame on each side. `get_project.frameTiming` reports availability. Read the project after an agent edit to see snapped ranges. Unsupported, ambiguous, or mismatched timestamps and sources over one million frames use explicitly labeled timestamp trimming; splits then leave at least 0.1 seconds on each side. At least one clip must remain. Very short ranges may contain no video frames; export verifies a decoded video frame and fails rather than downloading an audio-only result.
 - Speed: 0.25–4, preserving audio pitch. Zoom: scale 1–4, x/y 0–1. Shared zoom easing lasts up to 0.55 seconds, capped at half the incoming clip duration, with at least 60 fps transition sampling.
-- Default exports use bundled FFmpeg 0.12.10, one thread, fixed encoder settings, metadata stripping, and a 90 kHz encoder time base. Native encoding and source-copy shortcuts are bypassed. This can be slower; cuts still resolve to decoded frames.
+- Default exports use bundled FFmpeg 0.12.10, one thread, fixed encoder settings, metadata stripping, and a 90 kHz encoder time base. Native encoding and source-copy shortcuts are bypassed. Profile `ffmpeg-wasm-0.12.10-single-v2` uses decoded frame indices for indexed sources; older rendering profiles are rejected. This can be slower because frame selection decodes from the beginning.
 - Repeatability targets decoded video/audio within the same rendering environment, not byte-identical containers or cross-platform font rasterization. Rendering-semantic changes must bump the profile and either preserve or reject older profiles.
 - Keep the tab open. Completion means a downloadable Blob; it does not confirm a disk save. Use **download again** if automatic download is blocked. Hashing and source reads are incremental, but frames, filters, history, and output still consume RAM; the 500 MiB input limit is not a memory budget.
 
@@ -86,6 +86,16 @@ FFMPEG_PATH=/path/to/ffmpeg FFPROBE_PATH=/path/to/ffprobe \
 npm run test:agent
 ```
 
-It verifies live edits, retries, invalid/stale batches, undo, drag isolation, same-tab reconnect, cancellation, valid MP4/WebM, sub-frame export failure, and repeated decoded video/audio equality. Native FFmpeg/FFprobe are independent test tools only. `npm run test:keyboard` covers existing editor controls and project roundtrips.
+It verifies live edits, retries, invalid/stale batches, undo, drag isolation, same-tab reconnect, cancellation, valid MP4/WebM, sub-frame command rejection, and repeated decoded video/audio equality. Native FFmpeg/FFprobe are independent test tools only. `npm run test:keyboard` covers existing editor controls and project roundtrips.
 
 Set `SNIP_TEST_PROXY=1` to run that same browser suite through a separate proxy origin with bb-style Host/Origin rewriting. The bridge suite exercises origin/token restrictions and MCP routing without launching a browser.
+
+For source-frame verification, start `npm run dev` and run:
+
+```sh
+EDITOR_URL=http://localhost:5173 \
+FFMPEG_PATH=/path/to/ffmpeg FFPROBE_PATH=/path/to/ffprobe \
+npm run test:frames
+```
+
+This creates 60 fps and variable-rate fixtures and checks keyboard stepping/trimming, source timestamps against FFprobe, one-frame exports at 1×/2×, and independently decoded first/last exported frames. Unsupported browser/container timestamp mismatches remain explicitly labeled as unavailable for frame precision. Export details describe the rendered bytes, including average frame rate for variable-rate output; they are not a downloadable receipt.

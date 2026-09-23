@@ -1,12 +1,15 @@
+import { getFrameIndex } from './media-analysis';
+import { boundary, retainedFrames } from './frame-timing';
 import { compileTimeline } from './engine';
 import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 import { clipCrop, clipSpeed, cropPixels, outputSize, placement } from './types';
 import { ZOOM_TRANSITION_FPS, zoomTransitionFilter } from './zoom';
 import { colorLut, renderAnnotations } from './effects';
 import type { Source, Edits } from './types';
+let generation=0;
 let current: FFmpeg | null = null;
 let nativeController: AbortController | null = null;
-export function cancelExport() { nativeController?.abort(); nativeController=null; current?.terminate(); current = null; }
+export function cancelExport() { generation++; nativeController?.abort(); nativeController=null; current?.terminate(); current = null; }
 // Only a whole, unchanged picture can bypass rendering. Trims still use the
 // accurate render path, so cuts never snap to a nearby keyframe.
 export function canCopyPicture(source: Source, edits: Edits): boolean {
@@ -45,7 +48,11 @@ async function loadEngine(source: Source, deterministic: boolean): Promise<{ ffm
 }
 
 export async function exportVideo(source: Source, edits: Edits, progress: (fraction: number, stage: string) => void, deterministic = true): Promise<Blob> {
+  const started=generation;
+  const frames = await getFrameIndex(source).catch(() => null);
+  if(started!==generation)throw new Error('Export cancelled.');
   const plan = compileTimeline(source, edits);
+  if(frames && plan.edits.clips.some(clip=>{const range=retainedFrames(frames,clip);return range.after<=range.first;}))throw new Error('A clip contains no source frames. Extend its boundaries and try again.');
   edits = plan.edits;
   progress(0,'Preparing the video engine');
   const { ffmpeg, threads } = await loadEngine(source, deterministic);
@@ -105,12 +112,19 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
       }finally{if(nativeController===controller)nativeController=null;}
       progress(0,'Preparing compatible video export');lastProgress=0;
     }
-    let outputFrameRate=frameRate||30;
+    const lastClip=edits.clips[edits.clips.length-1];
+    const lastRange=frames?retainedFrames(frames,lastClip):null;
+    // VFR encoders infer the final packet's duration from the nominal rate.
+    // Match that retained frame (including speed), so a one-frame clip does
+    // not accidentally last a whole unsped source frame.
+    let outputFrameRate=frames&&lastRange
+      ? clipSpeed(lastClip,edits)/(boundary(frames,lastRange.after)-boundary(frames,lastRange.after-1))
+      : (frameRate||30)*clipSpeed(lastClip,edits);
     const output=outputSize(source,edits),position=placement(source,edits,output);
     const count=edits.clips.length;
     // A single trimmed clip can seek directly to its start. FFmpeg's default
     // accurate seek decodes the preceding keyframe without exporting preroll.
-    const seek=count===1 ? edits.clips[0].start : 0;
+    const seek=!frames && count===1 ? edits.clips[0].start : 0;
     const args=[...(seek>0 ? ['-ss',String(seek)] : []),'-threads',String(threads),'-i',input]; const graph:string[]=[];
     if(count>1){
       graph.push(`[0:v:0]split=${count}${edits.clips.map((_,i)=>`[vs${i}]`).join('')}`);
@@ -120,7 +134,8 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
       const crop=cropPixels(source,clipCrop(edits,clip)),speed=clipSpeed(clip,edits);
       const transitionRate=Math.max(ZOOM_TRANSITION_FPS,(frameRate||30)*speed);
       const transition=zoomTransitionFilter(source,edits,i,transitionRate);
-      const picture=[`trim=start=${clip.start-seek}:end=${clip.end-seek}`,'setpts=PTS-STARTPTS'];
+      const range=frames?retainedFrames(frames,clip):null;
+      const picture=[range?`trim=start_frame=${range.first}:end_frame=${range.after}`:`trim=start=${clip.start-seek}:end=${clip.end-seek}`,'setpts=PTS-STARTPTS'];
       picture.push('settb=AVTB', `setpts=PTS/${speed}`);
       if(transition){
         // Animate on the output clock: slow recordings and speed changes must

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 export type ShortcutActions = {
   hasVideo: boolean; blocked: boolean;
-  play: () => void; seekBy: (seconds: number) => void; seekEdge: (end: boolean) => void;
+  stepFrame: (direction: number) => void; play: () => void; seekBy: (seconds: number) => void; seekEdge: (end: boolean) => void;
   focusClip: (direction: number) => void; seekCut: (direction: number) => void; split: () => void; remove: () => void;
   trim: (edge: 'start' | 'end') => void; undo: () => void; redo: () => void;
   mute: () => void; speed: (direction: number) => void; zoom: (direction: number) => void;
@@ -38,7 +38,7 @@ export function useEditorShortcuts(actions: ShortcutActions) {
         if (key === ' ' && (!target?.closest('button,summary,a,[role=button],input[type=checkbox],input[type=radio]') || target?.matches('.timeline-clip'))) run = a.play;
         if ((key === 'arrowup' || key === 'arrowdown') && !target?.closest('input,[role=slider]')) run = () => (event.shiftKey ? a.seekCut : a.focusClip)(key === 'arrowdown' ? 1 : -1);
         if (!nativeNavigation) {
-          if (key === 'arrowleft' || key === 'arrowright') run = () => a.seekBy((key === 'arrowright' ? 1 : -1) * (event.shiftKey ? 1 : 1 / 30));
+          if (key === 'arrowleft' || key === 'arrowright') run = () => (event.shiftKey ? a.seekBy : a.stepFrame)(key === 'arrowright' ? 1 : -1);
           if (key === 'home' || key === 'end') run = () => a.seekEdge(key === 'end');
         }
         if (!event.shiftKey) {

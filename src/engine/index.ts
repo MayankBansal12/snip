@@ -1,9 +1,11 @@
+import { nearestBoundary, retainedFrames } from '../frame-timing';
+import type { FrameIndex } from '../frame-timing';
 import type { Clip, Edits, Source } from '../types';
 import { canMergeClips, clipDuration, defaultZoom, outputSize } from '../types';
 import { validateEdits } from './validation';
 
 export const ENGINE_VERSION = 1;
-export const RENDER_PROFILE = 'ffmpeg-wasm-0.12.10-single-v1';
+export const RENDER_PROFILE = 'ffmpeg-wasm-0.12.10-single-v2';
 export const MAX_JSON_BYTES = 8 * 1024 * 1024;
 export type SourceInfo = { sha256: string; size: number; width: number; height: number; duration: number };
 export type Specification = { version: 1; renderer: typeof RENDER_PROFILE; source: SourceInfo; edits: Edits };
@@ -64,7 +66,7 @@ export function readSpecification(value: unknown, source: SourceInfo): Specifica
   return createSpecification(source, normalizeEdits(spec.edits, source.duration));
 }
 /** Every command runs against a private copy; an invalid batch changes nothing. */
-export function applyCommands(value: Edits, commands: unknown, duration: number): Edits {
+export function applyCommands(value: Edits, commands: unknown, duration: number, frames?: FrameIndex | null): Edits {
   if (!Array.isArray(commands) || !commands.length || commands.length > 1000) throw new Error('Supply 1–1,000 commands.');
   let edits = normalizeEdits(value, duration);
   for (const input of commands) {
@@ -84,13 +86,26 @@ export function applyCommands(value: Edits, commands: unknown, duration: number)
       switch (action) {
         case 'splitClip': {
           keys(c, ['action','clipId','sourceTime','rightClipId']);
-          const time = c.sourceTime;
-          if (typeof time !== 'number' || !Number.isFinite(time) || time - clip.start < .1 || clip.end - time < .1) throw new Error('A split must leave at least 0.1 seconds on both sides.');
+          if(typeof c.sourceTime!=='number'||!Number.isFinite(c.sourceTime)||c.sourceTime<=clip.start||c.sourceTime>=clip.end)throw new Error('Split time must be inside the clip.');
+          const time = frames ? nearestBoundary(frames, c.sourceTime) : c.sourceTime;
+          const leftFrames=frames?retainedFrames(frames,{start:clip.start,end:time}):null;
+          const rightFrames=frames?retainedFrames(frames,{start:time,end:clip.end}):null;
+          const tooShort=leftFrames&&rightFrames
+            ? leftFrames.after<=leftFrames.first||rightFrames.after<=rightFrames.first
+            : time-clip.start<.1||clip.end-time<.1;
+          if(tooShort)throw new Error(frames?'A split must leave at least one source frame on both sides.':'A split must leave at least 0.1 seconds on both sides.');
           const rightId = id(c.rightClipId);
           if (edits.clips.some(clip => clip.id === rightId)) throw new Error('The new clip ID already exists.');
           edits.clips.splice(index, 1, { ...clip, end: time }, { ...clip, id: rightId, start: time }); break;
         }
-        case 'trimClip': keys(c, ['action','clipId','sourceStart','sourceEnd']); edits.clips[index] = { ...clip, start: c.sourceStart as number, end: c.sourceEnd as number }; break;
+        case 'trimClip': {
+          keys(c, ['action','clipId','sourceStart','sourceEnd']);
+          const {sourceStart:start,sourceEnd:end}=c;
+          if(typeof start!=='number'||!Number.isFinite(start)||typeof end!=='number'||!Number.isFinite(end)||start<0||end>duration||end<=start)
+            throw new Error('Invalid source trim range.');
+          edits.clips[index]={...clip,start:frames?nearestBoundary(frames,start):start,end:frames?nearestBoundary(frames,end):end};
+          break;
+        }
         case 'setSpeed': keys(c, ['action','clipId','speed']); if(typeof c.speed!=='number')throw new Error('Speed must be a number.'); edits.clips[index] = { ...clip, speed: c.speed as number }; break;
         case 'setZoom': keys(c, ['action','clipId','zoom']); keys(object(c.zoom), ['scale','x','y']); edits.clips[index] = { ...clip, zoom: c.zoom as Clip['zoom'] }; break;
         case 'deleteClip': keys(c, ['action','clipId']); edits.clips.splice(index, 1); break;
@@ -121,7 +136,7 @@ export class EditSession {
   private receipts = new Map<string, { input: string; revision: number }>();
   constructor(readonly sessionId: string) {}
   changed() { this.revision++; }
-  apply(value: unknown, edits: Edits, duration: number) {
+  apply(value: unknown, edits: Edits, duration: number, frames?: FrameIndex | null) {
     const batch = object(value); keys(batch, ['requestId','sessionId','revision','commands']);
     const requestId = id(batch.requestId);
     if (batch.sessionId !== this.sessionId) throw new Error('Project session changed. Read the project again.');
@@ -132,7 +147,7 @@ export class EditSession {
       return { edits, revision: receipt.revision, duplicate: true };
     }
     if (batch.revision !== this.revision) throw new Error('Project revision changed. Read the project again.');
-    const next = applyCommands(edits, batch.commands, duration);
+    const next = applyCommands(edits, batch.commands, duration, frames);
     // Never evict a receipt and risk executing an old retry again.
     if (this.receipts.size >= 10000) throw new Error('Session request limit reached. Reopen the project.');
     this.changed(); this.receipts.set(requestId, { input, revision: this.revision });
