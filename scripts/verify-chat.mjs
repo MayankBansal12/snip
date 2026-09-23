@@ -43,6 +43,10 @@ try {
   await page.locator('#video-file').setInputFiles(sample);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await page.getByRole('tab', { name: 'chat', exact: true }).click();
+  assert.equal(await chat.getByRole('button').count(), 3);
+  assert.equal(await chat.getByRole('combobox').count(), 0);
+  assert(!/powered by|prompt and edit settings|what would you like to change/.test(await chat.innerText()));
+  assert((await chat.boundingBox()).height < 90);
   await page.screenshot({ path: `${output}/desktop.png`, fullPage: true });
   const original = await saved();
   const fast = await submit('make the video 2x faster');
@@ -80,12 +84,6 @@ try {
   const compound = await submit('split at 4 seconds and make the second clip 2x faster');
   assert.equal(compound.status, 200, JSON.stringify(compound.result));
   await waitSaved(e => e.clips.length === 2 && e.clips[1].speed === 2);
-  const clipSelector = chat.getByRole('combobox', { name: 'inspect clip' });
-  assert.match(await clipSelector.innerText(), /clip 2/);
-  await clipSelector.click();
-  await page.getByRole('option', { name: 'clip 1', exact: true }).click();
-  assert.match(await clipSelector.innerText(), /clip 1/);
-  await page.waitForFunction(() => document.querySelector('video').currentTime === 0);
   await page.getByRole('tab', { name: 'timeline', exact: true }).click();
   assert.equal(await page.locator('.timeline-clip').count(), 2);
   await page.getByRole('tab', { name: 'chat', exact: true }).click();
@@ -98,9 +96,6 @@ try {
   assert.deepEqual(ordered.result.changes.map(c => c.action), ['split','zoom','speed','split','zoom']);
   const planned = await waitSaved(e => e.clips.length === 3 && e.clips[2].zoom?.scale === 3);
   assert.deepEqual(planned.clips.map(c => [c.start,c.end,c.speed,c.zoom?.scale]), [[0,2,1,1.5],[2,6,2,1],[6,8,2,3]]);
-  await chat.getByRole('combobox', {name:'inspect clip'}).click();
-  await page.getByRole('option', {name:'clip 3',exact:true}).click();
-  await chat.getByRole('button', {name:'zoom 3× · center',exact:true}).waitFor();
   await page.getByRole('tab', {name:'timeline',exact:true}).click();
   assert.equal(await page.locator('.timeline-clip').count(),3);
   await page.getByRole('tab', {name:'chat',exact:true}).click();
@@ -112,6 +107,19 @@ try {
   await waitSaved(e => e.clips.length === 1);
   console.log('PASS ordered repeated edits, new-part targeting and atomic undo/redo');
 
+  const magnified = await submit('2x zoom and 2x speed for clip 1');
+  assert.equal(magnified.status, 200, JSON.stringify(magnified.result));
+  await waitSaved(e => e.clips[0].zoom?.scale === 2 && e.clips[0].speed === 2);
+  const reset = await submit('1x zoom and 1x speed for clip 1');
+  assert.equal(reset.status, 200, JSON.stringify(reset.result));
+  assert.deepEqual(reset.result.changes.map(c => c.action), ['zoom','speed']);
+  await waitSaved(e => e.clips[0].zoom?.scale === 1 && e.clips[0].speed === 1);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e => e.clips[0].zoom?.scale === 2 && e.clips[0].speed === 2);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e => (e.clips[0].zoom?.scale ?? 1) === 1 && (e.clips[0].speed ?? e.speed) === 1);
+  console.log('PASS number-led zoom/speed reset and atomic undo');
+
   const centered = await submit('trim 5 seconds and apply 2x zoom in middle');
   assert.equal(centered.status, 200, JSON.stringify(centered.result));
   await waitSaved(e => e.clips[0].start === 5 && e.clips[0].zoom.scale === 2);
@@ -120,7 +128,8 @@ try {
   assert.equal(positioned.status, 200, JSON.stringify(positioned.result));
   await waitSaved(e => e.clips[0].zoom.scale === 2 && e.clips[0].zoom.x === 0 && e.clips[0].zoom.y === 0);
   assert.equal(await page.locator('.source-window video').evaluate(v => v.style.transform), 'scale(2, 2) translate(0%, 0%)');
-  const zoomButton = chat.getByRole('button', { name: 'zoom 2× · top left', exact: true });
+  await page.getByRole('tab', {name:'timeline',exact:true}).click();
+  const zoomButton = page.getByRole('button', { name: 'zoom 2×', exact: true });
   await zoomButton.click();
   const area = page.getByRole('group', { name: 'zoom area', exact: true });
   await area.waitFor();
@@ -133,6 +142,7 @@ try {
   await waitSaved(e => e.clips[0].zoom.x === 1 && e.clips[0].zoom.y === 1);
   await page.screenshot({path:`${output}/zoom-focus.png`,fullPage:true});
   await page.getByRole('button', {name:'close zoom',exact:true}).click();
+  await page.getByRole('tab', {name:'chat',exact:true}).click();
   await chat.getByRole('button', {name:'undo',exact:true}).click();
   await waitSaved(e => e.clips[0].zoom.x === 0 && e.clips[0].zoom.y === 0);
   await chat.getByRole('button', {name:'undo',exact:true}).click();
@@ -185,12 +195,15 @@ try {
   await page.evaluate(() => { localStorage.setItem('snip-theme', 'dark'); });
   await page.reload(); await page.getByRole('tab', { name: 'chat', exact: true }).click();
   await page.screenshot({ path: `${output}/mobile-dark.png`, fullPage: true });
-  await chat.getByRole('button', { name: 'zoom 1× · full frame', exact: true }).click();
-  await page.getByRole('group', { name: 'zoom area', exact: true }).waitFor();
-  const mobilePopup = await page.getByRole('dialog', { name: 'zoom · clip 1' }).boundingBox();
-  assert(mobilePopup.x >= 0 && mobilePopup.x + mobilePopup.width <= 391);
-  await page.screenshot({ path: `${output}/mobile-zoom.png`, fullPage: true });
-  await page.getByRole('button', { name: 'close zoom', exact: true }).click();
+  assert.equal(await chat.getByRole('button').count(), 3);
+  assert((await chat.boundingBox()).height < 90);
+  await prompt.fill('1x zoom and 1x speed for clip 1');
+  await prompt.press('Shift+Enter');
+  await prompt.press('a');
+  assert.match(await prompt.inputValue(), /\na$/);
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await chat.getByRole('button', {name:'apply edit'}).waitFor({state:'visible'});
+  await page.screenshot({path:`${output}/mobile-prompt.png`,fullPage:true});
   assert.equal((await saved()).muted, true);
   assert.equal(errors.length, 0, errors.join('\n'));
   console.log('PASS server failure, mobile layout, dark theme and reload persistence');

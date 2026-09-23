@@ -125,6 +125,6 @@ body { text-transform: lowercase; }
 /* Chat uses the same compact panel and keyboard-first controls as the timeline. */
 .editor-modes [data-slot=tab-indicator] { transition: none; }
 .chat-editor:focus-within { border-color: color-mix(in oklab, var(--primary) 45%, var(--border)); }
-.chat-prompt { min-height: 64px; max-height: 160px; field-sizing: content; }
+.chat-prompt { min-height: 38px; max-height: 160px; field-sizing: content; }
 .chat-editor button:active:not(:disabled) { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .chat-editor button:active:not(:disabled) { transform: none; } }

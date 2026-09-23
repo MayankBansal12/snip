@@ -6,8 +6,6 @@ import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
-import ClipActions from './components/ClipActions';
-import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from './components/ui/select';
 import { requestChatEdit } from './chat';
 import { Tabs, TabsList, TabsTab, TabsPanel } from './components/ui/tabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -374,13 +372,7 @@ export default function App(){
             <Timeline onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip} />
           </TabsPanel>
           <TabsPanel value="chat" keepMounted className="data-[hidden]:hidden">
-            <ChatEditor controls={<>
-              <Select value={selectedClip} items={edits.clips.map((c,i)=>({value:c.id,label:`clip ${i+1}`}))} onValueChange={id=>{const index=edits.clips.findIndex(c=>c.id===id);if(index>=0){setActionsOpen(false);seek(edits.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,edits),0));}}}>
-                <SelectTrigger aria-label="inspect clip" size="sm" className="w-auto min-w-0 border-transparent bg-transparent text-xs shadow-none"><SelectValue /></SelectTrigger>
-                <SelectPopup alignItemWithTrigger={false}>{edits.clips.map((c,i)=><SelectItem key={c.id} value={c.id}>clip {i+1}</SelectItem>)}</SelectPopup>
-              </Select>
-              <ClipActions modes={['zoom']} showFocus source={source} videoRef={videoRef} edits={edits} selected={selectedClip} open={editorMode==='chat'&&actionsOpen} onOpenChange={open=>{if(open)openClipActions(selectedClip);else setActionsOpen(false);}} onChange={changeClip} onCheckpoint={()=>{pausePlayback();checkpoint();}} />
-            </>} key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
+            <ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />
           </TabsPanel>
         </Tabs>
       </div>

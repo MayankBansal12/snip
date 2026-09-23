@@ -6,8 +6,18 @@ import type { Edits } from '../src/types';
 
 const base = () => { const edits = defaults(50.2); edits.clips[0].id = 'a'; return edits; };
 const twoClips = () => ({ ...base(), clips: [{ id:'a', start:0, end:4 }, { id:'b', start:6, end:50.2 }] });
-type Case = { suite?: 'ordered'; text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
+type Case = { suite?: 'ordered' | 'numeric'; text: string; edits?: Edits; time?: number; error?: RegExp; check?: (edits: Edits) => void; rejected?: boolean };
+const changedClips = () => ({...base(),clips:[
+  {id:'a',start:0,end:10,speed:2,zoom:{scale:2,x:.5,y:.5}},
+  {id:'b',start:10,end:50.2,speed:3,zoom:{scale:3,x:0,y:0}},
+]});
 const cases: Case[] = [
+  { suite:'numeric', text:'1x zoom and 1x speed for clip 1', edits:changedClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[3,3]]) },
+  { suite:'numeric', text:'2x zoom and 0.5x speed for clip 2', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[2,.5]]) },
+  { suite:'numeric', text:'1x speed and 1x zoom for clip 1', edits:changedClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[1,1],[3,3]]) },
+  { suite:'numeric', text:'normal speed and double zoom for the last clip', edits:changedClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[2,2],[2,1]]) },
+  { suite:'numeric', text:'zoom clip 1 to 2x and 0.5x speed for clip 2', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[2,1],[1,.5]]) },
+  { suite:'numeric', text:'zoom 2x then 0.5x speed for clip 2', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>[c.zoom?.scale,c.speed]),[[2,1],[2,.5]]) },
   { suite:'ordered', text:'zoom clip 1 to 1.5x, make clip 2 twice as fast, split at 12 seconds, and zoom the last part to 3x', edits:{...base(),clips:[{id:'a',start:0,end:10},{id:'b',start:10,end:50.2}]}, check:e=>assert.deepEqual(e.clips.map(c=>[c.start,c.end,c.speed,c.zoom?.scale]),[[0,10,1,1.5],[10,14,2,1],[14,50.2,2,3]]) },
   { suite:'ordered', text:'zoom clip 1 to 2x and zoom clip 2 to 3x', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>c.zoom?.scale),[2,3]) },
   { suite:'ordered', text:'zoom clip 1 to 2x, clip 2 to 3x', edits:twoClips(), check:e=>assert.deepEqual(e.clips.map(c=>c.zoom?.scale),[2,3]) },

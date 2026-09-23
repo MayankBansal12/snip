@@ -138,6 +138,28 @@ test('instruction boundaries preserve ranges, numeric lists and elliptical clip 
   assert.deepEqual(numbersIn('from 1:02.5 to 2:03, two minutes, half speed'),[62.5,123,120,.5]);
 });
 
+test('number-led settings share a trailing clip without overriding explicit or sequential targets',()=>{
+  assert.deepEqual(instructionsIn('1x zoom and 1x speed for clip 1'),['1x zoom for clip 1','1x speed for clip 1']);
+  assert.deepEqual(instructionsIn('2x zoom, 0.5x speed on clip 2'),['2x zoom on clip 2','0.5x speed on clip 2']);
+  assert.deepEqual(instructionsIn('normal speed and double zoom for the last clip'),['normal speed for the last clip','double zoom for the last clip']);
+  assert.deepEqual(instructionsIn('zoom clip 1 to 2x and 1x speed for clip 2'),['zoom clip 1 to 2x','1x speed for clip 2']);
+  assert.deepEqual(instructionsIn('zoom 2x then 1x speed for clip 2'),['zoom 2x','1x speed for clip 2']);
+});
+
+test('the reported reset prompt changes both controls on clip 1 and leaves clip 2 intact',()=>{
+  const request=fixture('1x zoom and 1x speed for clip 1');
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[
+    {id:'a',start:0,end:6,speed:2,zoom:{scale:2,x:.5,y:.5}},
+    {id:'b',start:6,end:12,speed:.5,zoom:{scale:3,x:0,y:0}},
+  ]},12);
+  const {plan,raw}=answers(request,[{action:'zoom',target:{clip:1},zoom:1,focus:null},{action:'speed',target:{clip:1},speed:1}]);
+  const result=compileAnswer(request,plan,raw);
+  assert.deepEqual(result.changes?.map(c=>c.action),['zoom','speed']);
+  const value=applyCommands(request.project.edits,result.batch.commands,12);
+  assert.equal(value.clips[0].zoom?.scale,1);assert.equal(value.clips[0].speed,1);
+  assert.deepEqual(value.clips[1],request.project.edits.clips[1]);
+});
+
 test('oversized requests and plans fail before making partial edits',()=>{
   assert.throws(()=>readRequest({...fixture(),text:'a'.repeat(1201)}),/incomplete/);
   assert.throws(()=>createPlan(fixture(Array(9).fill('zoom 2x').join(' then '))),/up to 8/);

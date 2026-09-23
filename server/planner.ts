@@ -48,11 +48,31 @@ export function numbersIn(text: string): number[] {
 // Jev still decides the action and arguments; fragments retain the full request
 // as context for pronouns and references to parts created by earlier edits.
 export function instructionsIn(text: string): string[] {
-  const verb = '(?:split|cut|divide|trim|keep|remove|delete|merge|join|reverse|reorder|make|apply|set|move|zoom|focus|pan|mute|unmute|restore|add|export|speed|slow|increase|decrease|reset|turn|change|crop|rotate|add(?:ing)?|zoom(?:ing)?|mut(?:ing)?|speed(?:ing)?)';
+  const verb = '(?:split|cut|divide|trim|keep|remove|delete|merge|join|reverse|reorder|make|apply|set|move|zoom|focus|pan|mute|unmute|restore|add|export|speed|slow|increase|decrease|reset|turn|change|crop|rotate|adding|zooming|muting|speeding)';
   const subject = '(?:(?:the )?(?:first|second|third|fourth|fifth|last|next|middle) (?:clip|part)|clip (?:\\d+|one|two|three|four|five))';
-  const start = `(?=(?:(?:please|then|also)\\s+)*(?:${verb}\\b|${subject}\\b))`;
-  return text.split(new RegExp(`(?:[;\\n]+|[,.]\\s+${start}|\\s+(?:and(?:\\s+then)?|then|also|while)\\s+${start})`, 'i'))
-    .map(s => s.replace(/^\s*(?:[-•]|\d+[.)])\s+/, '').trim()).filter(Boolean);
+  const setting = '(?:(?:\\d+(?:\\.\\d+)?|half|quarter|normal|double|triple)\\s*(?:[x×]|times?)?\\s+(?:zoom|speed|playback)\\b)';
+  const start = `(?=(?:(?:please|then|also)\\s+)*(?:${verb}\\b|${subject}\\b|${setting}))`;
+  const boundary = new RegExp(`(?:[;\\n]+|[,.]\\s+${start}|\\s+(?:and(?:\\s+then)?|then|also|while)\\s+${start})`, 'gi');
+  const fragments: string[] = [], joins: string[] = [];
+  let cursor=0;
+  for(const match of text.matchAll(boundary)){
+    fragments.push(text.slice(cursor,match.index));joins.push(match[0]);cursor=match.index!+match[0].length;
+  }
+  fragments.push(text.slice(cursor));
+  const clean=(s:string)=>s.replace(/^\s*(?:[-•]|\d+[.)])\s+/, '').replace(/,\s*$/, '').trim();
+  const parts=fragments.map(clean);
+  // A trailing target can govern coordinated settings: "1x zoom and 1x
+  // speed for clip 1". Copy it to unscoped settings in that group, while
+  // preserving explicit targets and boundaries such as "then" or a new line.
+  for(let i=0;i<parts.length;i++){
+    const shared=parts[i].match(/\b(?:for|on|in)\s+(?:(?:the|original)\s+)?(?:clip\s+(?:\d+|one|two|three|four|five)|(?:first|second|third|fourth|fifth|last|selected|current)\s+clip)\s*[.!]?$/i);
+    if(!shared||!/\b(?:zoom|speed|playback|faster|slower)\b/i.test(parts[i]))continue;
+    for(let j=i-1;j>=0;j--){
+      if(/\bthen\b|[;\n.]|\bwhile\b/i.test(joins[j])||!/\b(?:zoom|speed|playback|faster|slower)\b/i.test(parts[j])||/\b(?:clip|part|video|selected|current)\b/i.test(parts[j]))break;
+      parts[j]+=' '+shared[0].replace(/[.!]$/, '');
+    }
+  }
+  return parts.filter(Boolean);
 }
 
 export function createPlan(request: ChatRequest) {
