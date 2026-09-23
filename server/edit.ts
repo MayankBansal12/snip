@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { intentQuestions, readIntent } from './intent';
 import { compileAnswer, createPlan, EditError, readRequest } from './planner';
 
 const MAX_BODY = 256 * 1024;
@@ -50,8 +49,7 @@ export async function handleEdit(req: IncomingMessage & { body?: unknown }, res:
       }
       return response.json();
     };
-    const intent = readIntent(await evaluate({ user_request: request.text }, intentQuestions()));
-    const plan = createPlan(request, intent);
+    const plan = createPlan(request);
     const result = compileAnswer(request, plan, await evaluate(plan.state, plan.questions));
     if (!controller.signal.aborted) send(200, result);
   } catch (error) {

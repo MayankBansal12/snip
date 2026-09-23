@@ -8,7 +8,7 @@ export type ChatRequest = {
   revision: number;
   project: { duration: number; edits: Edits; selectedClip: string; time: number };
 };
-export type ChatResult = { batch: Batch; summary: string };
+export type ChatResult = { batch: Batch; summary: string; changes?: import('./edit-plan').Change[] };
 
 export async function requestChatEdit(request: ChatRequest, signal: AbortSignal): Promise<ChatResult> {
   const response = await fetch('/api/edit', {

@@ -11,7 +11,7 @@ const page = await context.newPage(); page.setDefaultTimeout(20000);
 await page.route('**/_vercel/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
 const errors = []; page.on('pageerror', error => errors.push(error.stack || error.message));
 const output = process.env.VERIFY_OUTPUT || '/tmp/snip-chat-verification'; mkdirSync(output, { recursive: true });
-const url = process.env.SNIP_URL || 'http://127.0.0.1:52945';
+const url = process.env.SNIP_URL || 'http://127.0.0.1:52947';
 const chat = page.getByRole('region', { name: 'edit with chat' });
 const prompt = page.getByRole('textbox', { name: 'what would you like to change?' });
 const status = chat.locator('div[role=status]');
@@ -92,6 +92,25 @@ try {
   await chat.getByRole('button', { name: 'undo', exact: true }).click();
   await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1);
   console.log('PASS compound edit is reflected in timeline and undone atomically');
+
+  const ordered = await submit('split at 2 seconds, zoom the first clip to 1.5x, make the second clip 2x faster, split at 4 seconds, and zoom the last part to 3x');
+  assert.equal(ordered.status, 200, JSON.stringify(ordered.result));
+  assert.deepEqual(ordered.result.changes.map(c => c.action), ['split','zoom','speed','split','zoom']);
+  const planned = await waitSaved(e => e.clips.length === 3 && e.clips[2].zoom?.scale === 3);
+  assert.deepEqual(planned.clips.map(c => [c.start,c.end,c.speed,c.zoom?.scale]), [[0,2,1,1.5],[2,6,2,1],[6,8,2,3]]);
+  await chat.getByRole('combobox', {name:'inspect clip'}).click();
+  await page.getByRole('option', {name:'clip 3',exact:true}).click();
+  await chat.getByRole('button', {name:'zoom 3× · center',exact:true}).waitFor();
+  await page.getByRole('tab', {name:'timeline',exact:true}).click();
+  assert.equal(await page.locator('.timeline-clip').count(),3);
+  await page.getByRole('tab', {name:'chat',exact:true}).click();
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e => e.clips.length === 1 && (e.clips[0].speed ?? e.speed) === 1 && (e.clips[0].zoom?.scale ?? 1) === 1);
+  await chat.getByRole('button', {name:'redo',exact:true}).click();
+  await waitSaved(e => e.clips.length === 3 && e.clips[2].zoom?.scale === 3);
+  await chat.getByRole('button', {name:'undo',exact:true}).click();
+  await waitSaved(e => e.clips.length === 1);
+  console.log('PASS ordered repeated edits, new-part targeting and atomic undo/redo');
 
   const centered = await submit('trim 5 seconds and apply 2x zoom in middle');
   assert.equal(centered.status, 200, JSON.stringify(centered.result));

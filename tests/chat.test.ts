@@ -3,226 +3,175 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { applyCommands, normalizeEdits } from '../src/engine/index';
 import { defaults, sequenceDuration } from '../src/types';
-import { compileAnswer, createPlan, controlText, numbersIn, readRequest } from '../server/planner';
-import { intentQuestions, readIntent } from '../server/intent';
-import type { Control } from '../server/intent';
+import { compileAnswer, createPlan, instructionsIn, numbersIn, readRequest } from '../server/planner';
+import { compileChanges } from '../server/compiler';
+import type { Change } from '../server/operations';
 import { handleEdit } from '../server/edit';
 
-function intentAnswer(requested: Control[]) {
-  const answers: Record<string, { type: string; noul?: number; choice?: string; confidence?: number }> = Object.fromEntries(Object.keys(intentQuestions()).map(name => [name, { type: 'noul', noul: requested.includes(name as Control) ? .99 : .01 }]));
-  answers.timing = { type:'choice', choice:requested.includes('split') ? (requested.includes('trim') ? 'both' : 'split') : requested.includes('trim') ? 'trim' : 'none', confidence:1 };
-  return { answers };
+function fixture(text='make it 2x faster'){
+  const edits=defaults(12);edits.clips[0].id='a';
+  return readRequest({text,requestId:'test',sessionId:'session',revision:3,project:{duration:12,edits,selectedClip:'a',time:3}});
 }
-
-function fixture(text = 'make it 2x faster') {
-  const edits = defaults(12); edits.clips[0].id = 'a';
-  return readRequest({ text, requestId: 'test', sessionId: 'session', revision: 3, project: { duration: 12, edits, selectedClip: 'a', time: 3 } });
+function answers(request:ReturnType<typeof fixture>,rows:Record<string,unknown>[]){
+  const plan=createPlan(request);
+  const raw={answers:Object.fromEntries(Object.keys(plan.questions).map(k=>[k,{type:'choice',choice:'unsupported',confidence:1}]))};
+  raw.answers.support={type:'choice',choice:'supported',confidence:1};
+  for(const [i,row] of rows.entries())for(const [field,value] of Object.entries(row)){
+    const key=`edit${i+1}_${field}`;
+    const choice=Object.entries(plan.choices[key]).find(([,v])=>JSON.stringify(v.value)===JSON.stringify(value))?.[0];
+    assert(choice,`Missing ${key} option ${JSON.stringify(value)}`);
+    raw.answers[key]={type:'choice',choice,confidence:1};
+  }
+  return {plan,raw};
 }
-function answer(request: ReturnType<typeof fixture>, overrides: Record<string, unknown> = {}) {
-  const dependencies = new Set(['speedScope', 'zoomScope', 'anchor']);
-  const requested = Object.keys(overrides).filter(name => !dependencies.has(name)) as Control[];
-  const plan = createPlan(request, requested);
-  const answers = Object.fromEntries(Object.entries(plan.choices).map(([name, options]) => {
-    const value = name in overrides ? overrides[name] : name.endsWith('Scope') ? 'all' : name === 'anchor' ? { x: .5, y: .5 } : null;
-    const choice = Object.entries(options).find(([, option]) => JSON.stringify(option.value) === JSON.stringify(value))?.[0];
-    assert(choice, `Missing ${name} option ${JSON.stringify(value)}`);
-    return [name, { type: 'choice', choice, confidence: 1 }];
-  }));
-  return { plan, raw: { answers } };
-}
+const split=(seconds:number,result='split1'):Change=>({action:'split',clip:'all',at:{from:'timeline',seconds},result});
+const zoom=(clip:Extract<Change,{action:'zoom'}>['clip'],scale:number):Change=>({action:'zoom',clip,scale,focus:null});
+const edited=(request:ReturnType<typeof fixture>,changes:Change[])=>applyCommands(request.project.edits,compileChanges(request,changes).batch.commands,request.project.duration);
 
-test('a split plus speed and zoom produces one revision-bound, deterministic batch', () => {
-  const request = fixture('split at 4 seconds and make the second clip 2x faster');
-  const { plan, raw } = answer(request, { split: 4, speed: 2, speedScope: 1, zoom: 1.5, zoomScope: 1 });
-  const result = compileAnswer(request, plan, raw);
-  assert.deepEqual(result, compileAnswer(request, plan, raw));
-  assert.equal(result.batch.revision, 3); assert.equal(result.batch.sessionId, 'session');
-  const edited = applyCommands(request.project.edits, result.batch.commands, 12);
-  assert.equal(edited.clips.length, 2); assert.equal(sequenceDuration(edited), 8);
-  assert.equal(edited.clips[0].speed, 1); assert.equal(edited.clips[1].speed, 2); assert.equal(edited.clips[1].zoom?.scale, 1.5);
+test('one answer becomes an ordered array; irrelevant speculative fields cannot block it',()=>{
+  const request=fixture('split at 4 seconds then make the second clip 2x faster then zoom the last part to 3x');
+  const {plan,raw}=answers(request,[{action:'split',target:'all',split:[{from:'timeline',seconds:4}]},{action:'speed',target:{clip:2},speed:2},{action:'zoom',target:'last',zoom:3,focus:null}]);
+  const result=compileAnswer(request,plan,raw);
+  assert.deepEqual(result,compileAnswer(request,plan,raw));
+  assert.deepEqual(result.changes?.map(c=>c.action),['split','speed','zoom']);
+  assert.equal(result.batch.revision,3);assert.equal(result.batch.sessionId,'session');
+  const value=applyCommands(request.project.edits,result.batch.commands,12);
+  assert.equal(value.clips.length,2);assert.equal(sequenceDuration(value),8);
+  assert.equal(value.clips[0].speed,1);assert.equal(value.clips[1].speed,2);assert.equal(value.clips[1].zoom?.scale,3);
 });
 
-test('timeline trims convert through speed and preserve original source ranges after reordering', () => {
-  const request = fixture('keep only 1 to 5 seconds');
-  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{ id: 'a', start: 6, end: 12, speed: 2 }, { id: 'b', start: 0, end: 6, speed: 1 }] }, 12);
-  const { plan, raw } = answer(request, { trim: { start: 1, end: 5, remove: false } });
-  const result = applyCommands(request.project.edits, compileAnswer(request, plan, raw).batch.commands, 12);
-  assert.deepEqual(result.clips.map(c => [c.start, c.end, c.speed]), [[8, 12, 2], [0, 2, 1]]);
-  assert.equal(sequenceDuration(result), 4);
+test('repeated zooms stay attached to their own targets; later edits use newly created parts',()=>{
+  const request=fixture();
+  const value=edited(request,[split(4),zoom({clip:1},1.5),{action:'speed',clip:{clip:2},rate:2},split(6,'split4'),zoom({split:4,side:'right'},3)]);
+  assert.deepEqual(value.clips.map(c=>[c.start,c.end,c.speed,c.zoom?.scale]),[[0,4,1,1.5],[4,8,2,1],[8,12,2,3]]);
 });
 
-test('removing a middle interval retains both sides with inherited effects', () => {
-  const request = fixture('remove 2 to 4 seconds');
-  const { plan, raw } = answer(request, { trim: { start: 2, end: 4, remove: true } });
-  const result = applyCommands(request.project.edits, compileAnswer(request, plan, raw).batch.commands, 12);
-  assert.deepEqual(result.clips.map(c => [c.start, c.end]), [[0, 2], [4, 12]]);
-  assert.equal(sequenceDuration(result), 10);
+test('execution preserves requested order rather than grouping edits by action',()=>{
+  const request=fixture();
+  const speed:Change={action:'speed',clip:'all',rate:2};
+  assert.equal(edited(request,[speed,split(4)]).clips[0].end,8);
+  assert.equal(edited(request,[split(4),speed]).clips[0].end,4);
 });
 
-test('unsupported, low-confidence, forged and invalid multi-edit answers never mutate the project', () => {
-  const request = fixture(), before = structuredClone(request);
-  const { plan, raw } = answer(request, { speed: 2, delete: 'selected' });
-  assert.throws(() => compileAnswer(request, plan, raw), /current timeline/);
-  assert.deepEqual(request, before);
-  raw.answers.speed.confidence = .1;
-  assert.throws(() => compileAnswer(request, plan, raw), /clear enough/);
-  raw.answers.speed.confidence = 1; raw.answers.speed.choice = '__proto__';
-  assert.throws(() => compileAnswer(request, plan, raw), /unreadable/);
+test('multiple split positions expand into individual ordered changes',()=>{
+  const request=fixture('split at 3 and 8 seconds');
+  const {plan,raw}=answers(request,[{action:'split',target:'all',split:[{from:'timeline',seconds:3},{from:'timeline',seconds:8}]}]);
+  const result=compileAnswer(request,plan,raw);
+  assert.equal(result.changes?.length,2);
+  assert.deepEqual(applyCommands(request.project.edits,result.batch.commands,12).clips.map(c=>[c.start,c.end]),[[0,3],[3,8],[8,12]]);
 });
 
-test('exact numbers, word numbers, minutes and timecodes become bounded options', () => {
-  assert.deepEqual(numbersIn('from 1:02.5 to 2:03, two minutes, half speed'), [62.5, 123, 120, .5]);
-  assert.throws(() => readRequest({ ...fixture(), text: 'a'.repeat(1201) }), /incomplete/);
-  assert.throws(() => readRequest({ ...fixture(), project: { ...fixture().project, time: Infinity } }), /incomplete/);
-  const plan = createPlan(fixture('0 1 2 3 4 5 6 7 8 9 10 11'), ['trim']);
-  for (const question of Object.values(plan.questions)) assert(Object.keys(question.criteria).length <= 255);
+test('trim times convert through reordered clips and speed; each per-clip trim stays local',()=>{
+  const request=fixture();
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:6,end:12,speed:2},{id:'b',start:0,end:6,speed:1}]},12);
+  const value=edited(request,[{action:'trim',clip:'all',range:{mode:'keepRange',start:1,end:5}}]);
+  assert.deepEqual(value.clips.map(c=>[c.start,c.end,c.speed]),[[8,12,2],[0,2,1]]);
+  const local=edited(request,[{action:'trim',clip:{clip:2},range:{mode:'removeStart',seconds:2}}]);
+  assert.deepEqual(local.clips.map(c=>[c.start,c.end]),[[6,12],[2,6]]);
 });
 
-test('HTTP handler protects credentials, validates requests and sends only text and edit metadata', async () => {
-  const request = fixture(); let calls = 0;
-  const server = createServer((req, res) => void handleEdit(req, res, { apiKey: 'server-only-test-key', fetch: (async (_url, init) => {
-    calls++;
-    const body = JSON.parse(String(init?.body));
-    assert.equal(body.model, 'jev-1.13.0');
-    if (calls === 1) assert.equal(body.state.user_request, request.text);
-    else assert.equal(body.questions.speed.instructions.user_request, request.text);
-    assert(!('file' in body.state)); assert(!('name' in body.state));
-    assert(!JSON.stringify(body).includes('server-only-test-key'));
-    if (calls === 1) return new Response(JSON.stringify(intentAnswer(['speed'])));
-    assert.deepEqual(Object.keys(body.questions).sort(), ['speed', 'speedScope']);
-    const { raw } = answer(request, { speed: 2 });
-    return new Response(JSON.stringify(raw));
-  }) as typeof fetch }));
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/edit`;
-  try {
-    assert.equal((await fetch(url)).status, 405);
-    const forbidden = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' }, body: JSON.stringify(request) });
-    assert.equal(forbidden.status, 403);
-    const invalid = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    assert.equal(invalid.status, 400); assert.equal(calls, 0);
-    const result = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
-    assert.equal(result.status, 200); assert.equal(result.headers.get('cache-control'), 'no-store');
-    const body = await result.text(); assert(!body.includes('server-only-test-key'));
-    assert.equal(JSON.parse(body).batch.commands[0].speed, 2); assert.equal(calls, 2);
-  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+test('middle removal retains both sides and a later instruction can target the final part',()=>{
+  const request=fixture();
+  const value=edited(request,[{action:'trim',clip:'all',range:{mode:'removeRange',start:2,end:4}},zoom('last',2)]);
+  assert.deepEqual(value.clips.map(c=>[c.start,c.end,c.zoom?.scale]),[[0,2,1],[4,12,2]]);
 });
 
-
-test('irrelevant speculative answers cannot block a split or add unwanted changes', () => {
-  const request = fixture('split at 4 seconds');
-  const { plan, raw } = answer(request, { split: 4 });
-  assert.deepEqual(Object.keys(plan.questions), ['split']);
-  raw.answers.trim = { type: 'choice', choice: 'unsupported', confidence: 1 };
-  raw.answers.muted = { type: 'choice', choice: 'v0', confidence: 1 };
-  const result = compileAnswer(request, plan, raw);
-  assert.deepEqual(result.batch.commands.map(c => c.action), ['splitClip']);
+test('a failing later instruction rolls back the entire array without mutating the input',()=>{
+  const request=fixture(),before=structuredClone(request);
+  assert.throws(()=>compileChanges(request,[zoom('all',2),{action:'delete',clip:'all'}]),/current timeline/);
+  assert.deepEqual(request,before);
+  assert.throws(()=>compileChanges(request,[split(4),{action:'trim',clip:'all',range:{mode:'keepRange',start:3,end:100}}]),/does not fit/);
+  assert.deepEqual(request,before);
 });
 
-test('position-only zoom keeps magnification, preserves clip scope and names the focus', () => {
-  const request = fixture('zoom needs to be in top left side');
-  request.project.edits.clips[0].zoom = { scale: 2, x: .5, y: .5 };
-  const { plan, raw } = answer(request, { zoom: 'keep', zoomScope: 'selected', anchor: { x: 0, y: 0 } });
-  const result = compileAnswer(request, plan, raw);
-  assert.deepEqual(result.batch.commands, [{ action: 'setZoom', clipId: 'a', zoom: { scale: 2, x: 0, y: 0 } }]);
-  assert.match(result.summary, /clip 1: zoom 2× · top left/);
-  request.project.edits.clips[0].zoom.scale = 1;
-  const firstZoom = compileAnswer(request, plan, raw).batch.commands[0];
-  assert.equal(firstZoom.action === 'setZoom' && firstZoom.zoom.scale, 1.5);
+test('unknown, missing and low-confidence required answers reject the entire response',()=>{
+  const request=fixture('zoom 2x then split at 4 seconds'),before=structuredClone(request);
+  const {plan,raw}=answers(request,[{action:'zoom',target:'all',zoom:2,focus:null},{action:'split',target:'all',split:[{from:'timeline',seconds:4}]}]);
+  raw.answers.edit2_split.choice='__proto__';assert.throws(()=>compileAnswer(request,plan,raw),/unreadable/);
+  raw.answers.edit2_split.choice='at0';raw.answers.edit2_split.confidence=.1;assert.throws(()=>compileAnswer(request,plan,raw),/clear enough/);
+  delete raw.answers.edit2_split;assert.throws(()=>compileAnswer(request,plan,raw),/incomplete/);
+  raw.answers.support.choice='unsupported';assert.throws(()=>compileAnswer(request,plan,raw),/can’t inspect/);
+  assert.deepEqual(request,before);
 });
 
-test('changing zoom scale preserves an existing focus and bare faster is relative', () => {
-  const request = fixture('make it faster and zoom in');
-  request.project.edits.clips[0].speed = 2;
-  request.project.edits.clips[0].zoom = { scale: 2, x: 0, y: 0 };
-  const { plan, raw } = answer(request, { speed: 'faster', zoom: 'in', anchor: null });
-  const result = applyCommands(request.project.edits, compileAnswer(request, plan, raw).batch.commands, 12);
-  assert.equal(result.clips[0].speed, 4);
-  assert.deepEqual(result.clips[0].zoom, { scale: 3, x: 0, y: 0 });
+test('position-only zoom preserves scale, and relative speed/zoom preserve focus',()=>{
+  const request=fixture();request.project.edits.clips[0].zoom={scale:2,x:.5,y:.5};request.project.edits.clips[0].speed=2;
+  const changes:Change[]=[{action:'zoom',clip:'all',scale:'keep',focus:{x:0,y:0}},{action:'speed',clip:'all',rate:'faster'},{action:'zoom',clip:'all',scale:'in',focus:null}];
+  const result=compileChanges(request,changes),value=applyCommands(request.project.edits,result.batch.commands,12);
+  assert.equal(value.clips[0].speed,4);assert.deepEqual(value.clips[0].zoom,{scale:3,x:0,y:0});assert.match(result.summary,/top left/);
 });
 
-test('the intent gate rejects unsupported clauses and malformed answers', () => {
-  const raw = intentAnswer(['split']);
-  raw.answers.speed.noul = .5; // An undecided, unrelated control must not veto or mutate a split.
-  assert.deepEqual(readIntent(raw), ['split']);
-  raw.answers.unsupported.noul = .95;
-  assert.throws(() => readIntent(raw), /can’t inspect/);
-  raw.answers.unsupported.noul = .01; raw.answers.timing.confidence = NaN;
-  assert.throws(() => readIntent(raw), /unreadable/);
+test('relative splits resolve from the submitted playhead across sped-up source ranges',()=>{
+  const request=fixture();request.project.time=2;
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:6,end:12,speed:2},{id:'b',start:0,end:6,speed:1}]},12);
+  const result=compileChanges(request,[{action:'split',clip:'all',at:{from:'playhead',seconds:3},result:'split1'}]);
+  assert.deepEqual(applyCommands(request.project.edits,result.batch.commands,12).clips.map(c=>[c.start,c.end]),[[6,12],[0,2],[2,6]]);
+  assert.match(result.summary,/split at 5s \(3s after the playhead\)/);
 });
 
-
-test('compound clauses keep trim seconds out of zoom scope and preserve numeric ranges', () => {
-  const text = 'trim 5 seconds and apply 2x zoom in middle';
-  assert.equal(controlText(text, 'trim'), 'trim 5 seconds');
-  assert.equal(controlText(text, 'zoom'), 'apply 2x zoom in middle');
-  assert.equal(controlText('keep between 2 and 5 seconds and zoom 2x', 'trim'), 'keep between 2 and 5 seconds');
-  const plan = createPlan(fixture(text), ['trim', 'zoom']);
-  assert.equal(plan.questions.zoomScope.instructions.user_request, 'apply 2x zoom in middle');
-  assert(!('user_request' in plan.state));
-});
-
-test('a bare five-second trim plus centered zoom compiles against the screenshot timeline', () => {
-  const request = fixture('trim 5 seconds and apply 2x zoom in middle');
-  request.project.duration = 50.2;
-  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{id:'a', start:0, end:4}, {id:'b', start:6, end:50.2}] }, 50.2);
-  const { plan, raw } = answer(request, { trim: { start:5, end:48.2, remove:false }, zoom:2, anchor:{x:.5,y:.5} });
-  const result = compileAnswer(request, plan, raw);
-  const edited = applyCommands(request.project.edits, result.batch.commands, 50.2);
-  assert.deepEqual(edited.clips.map(c=>[c.start,c.end,c.zoom]), [[7,50.2,{scale:2,x:.5,y:.5}]]);
-  assert.match(result.summary, /removed first 5s/);
-  assert.match(result.summary, /zoom 2× · center/);
-});
-
-
-test('relative splits resolve from the playhead in edited timeline seconds across reordered, sped-up clips', () => {
-  const request = fixture('split 3 seconds after');
-  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{ id: 'a', start: 6, end: 12, speed: 2 }, { id: 'b', start: 0, end: 6, speed: 1 }] }, 12);
-  request.project.time = 2;
-  const { plan, raw } = answer(request, { split: { offset: 3 } });
-  const result = compileAnswer(request, plan, raw);
-  const edited = applyCommands(request.project.edits, result.batch.commands, 12);
-  assert.deepEqual(edited.clips.map(c => [c.start, c.end, c.speed]), [[6, 12, 2], [0, 2, 1], [2, 6, 1]]);
-  assert.equal(sequenceDuration(edited), 9);
-  assert.match(result.summary, /split at 5s \(3s after the playhead\)/);
-});
-
-test('relative before, absolute timestamps and the playhead remain distinct split choices', () => {
-  const request = fixture('split 3 seconds before');
-  request.project.time = 7.6;
-  for (const [split, expected] of [[{ offset: -3 }, 4.6], [3, 3], [7.6, 7.6]] as const) {
-    const { plan, raw } = answer(request, { split });
-    const result = compileAnswer(request, plan, raw);
-    const edited = applyCommands(request.project.edits, result.batch.commands, 12);
-    assert.equal(edited.clips[0].end, expected);
-    assert.equal(edited.clips[1].start, expected);
+test('relative split boundaries cannot clamp or silently choose another timestamp',()=>{
+  for(const [time,offset,position] of [[10,3,13],[9,3,12],[2,-3,-1],[3,-3,0]]){
+    const request=fixture();request.project.time=time;
+    assert.throws(()=>compileChanges(request,[{action:'split',clip:'all',at:{from:'playhead',seconds:offset},result:'split1'}]),new RegExp(`lands at ${position}s, outside`));
   }
+  const request=fixture();assert.throws(()=>compileChanges(request,[split(4),split(4,'split2')]),/already a split/);
 });
 
-test('relative split boundaries never clamp to another timestamp or mutate the original project', () => {
-  for (const [time, offset, position] of [[10, 3, 13], [9, 3, 12], [2, -3, -1], [3, -3, 0]]) {
-    const request = fixture(`split 3 seconds ${offset > 0 ? 'after' : 'before'}`);
-    request.project.time = time;
-    const before = structuredClone(request);
-    const { plan, raw } = answer(request, { split: { offset } });
-    assert.throws(() => compileAnswer(request, plan, raw), new RegExp(`lands at ${position}s, outside`));
-    assert.deepEqual(request, before);
-  }
-  const request = fixture('split 3 seconds after');
-  request.project.edits = normalizeEdits({ ...request.project.edits, clips: [{ id:'a', start:0, end:4 }, { id:'b', start:4, end:12 }] }, 12);
-  request.project.time = 1;
-  const { plan, raw } = answer(request, { split: { offset:3 } });
-  assert.throws(() => compileAnswer(request, plan, raw), /already a split at 4s/);
+test('merge uses both neighbors and preserves engine compatibility constraints',()=>{
+  const request=fixture();
+  request.project.edits=edited(request,[split(4)]);
+  const value=edited(request,[{action:'merge',clips:[{clip:1},{clip:2}]}]);
+  assert.deepEqual(value.clips.map(c=>[c.start,c.end]),[[0,12]]);
+  assert.throws(()=>compileChanges(request,[zoom({clip:2},2),{action:'merge',clips:[{clip:1},{clip:2}]}]),/matching speed and zoom/);
+});
+
+test('new-part references cannot point forward or resurrect a removed clip',()=>{
+  const request=fixture();
+  assert.throws(()=>compileChanges(request,[zoom({split:2,side:'right'},2),split(4,'split2')]),/has not happened/);
+  assert.throws(()=>compileChanges(request,[split(4),{action:'delete',clip:{split:1,side:'right'}},zoom({split:1,side:'right'},2)]),/no longer/);
+});
+
+test('instruction boundaries preserve ranges, numeric lists and elliptical clip targets',()=>{
+  assert.deepEqual(instructionsIn('trim 5 seconds and apply 2x zoom in middle'),['trim 5 seconds','apply 2x zoom in middle']);
+  assert.deepEqual(instructionsIn('keep between 2 and 5 seconds then zoom 2x'),['keep between 2 and 5 seconds','zoom 2x']);
+  assert.deepEqual(instructionsIn('split at 3 and 8 seconds, zoom clip 1 to 2x, clip 2 to 3x'),['split at 3 and 8 seconds','zoom clip 1 to 2x','clip 2 to 3x']);
+  assert.deepEqual(numbersIn('from 1:02.5 to 2:03, two minutes, half speed'),[62.5,123,120,.5]);
+});
+
+test('oversized requests and plans fail before making partial edits',()=>{
+  assert.throws(()=>readRequest({...fixture(),text:'a'.repeat(1201)}),/incomplete/);
+  assert.throws(()=>createPlan(fixture(Array(9).fill('zoom 2x').join(' then '))),/up to 8/);
+  assert.throws(()=>compileChanges(fixture(),Array(9).fill(zoom('all',2))),/between 1 and 8/);
+  for(const q of Object.values(createPlan(fixture('trim 0 1 2 3 4 5 6 7 8 9 10 11 seconds')).questions))assert(Object.keys(q.criteria).length<=255);
+});
+
+test('HTTP handler makes exactly one Jev call with scoped questions and returns the changes array',async()=>{
+  const request=fixture();let calls=0;
+  const server=createServer((req,res)=>void handleEdit(req,res,{apiKey:'server-only-test-key',fetch:(async(_url,init)=>{
+    calls++;const body=JSON.parse(String(init?.body));
+    assert.equal(body.state.user_request,request.text);assert.equal(body.state.playhead,3);
+    assert('edit1_action' in body.questions);assert('edit1_speed' in body.questions);
+    assert(!('file' in body.state));assert(!('name' in body.state));assert(!JSON.stringify(body).includes('server-only-test-key'));
+    const {raw}=answers(request,[{action:'speed',target:'all',speed:2}]);return new Response(JSON.stringify(raw));
+  }) as typeof fetch}));
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const url=`http://127.0.0.1:${(server.address() as {port:number}).port}/api/edit`;
+  try{
+    assert.equal((await fetch(url)).status,405);
+    assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Sec-Fetch-Site':'cross-site'},body:JSON.stringify(request)})).status,403);
+    assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,400);assert.equal(calls,0);
+    const result=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
+    assert.equal(result.status,200);assert.equal(result.headers.get('cache-control'),'no-store');
+    const body=await result.text();assert(!body.includes('server-only-test-key'));
+    const json=JSON.parse(body);assert.deepEqual(json.changes,[{action:'speed',clip:'all',rate:2}]);assert.equal(json.batch.commands[0].speed,2);assert.equal(calls,1);
+  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
 
 
-test('timing intent distinguishes a split, a trim, and an explicitly requested combination', () => {
-  for (const requested of [['split'], ['trim'], ['split', 'trim'], ['zoom']] as Control[][]) {
-    assert.deepEqual(readIntent(intentAnswer(requested)), requested);
-  }
-  const raw = intentAnswer(['split']);
-  raw.answers.trim = { type:'noul', noul:1 }; // Ignore unrelated/legacy independent answers.
-  assert.deepEqual(readIntent(raw), ['split']);
-  raw.answers.timing.choice = '__proto__';
-  assert.throws(() => readIntent(raw), /unreadable/);
+test('multiple splits in one named clip retain that instruction’s local time origin',()=>{
+  const request=fixture('split clip 2 at 2 and 4 seconds');
+  request.project.edits=normalizeEdits({...request.project.edits,clips:[{id:'a',start:0,end:4},{id:'b',start:6,end:12}]},12);
+  const {plan,raw}=answers(request,[{action:'split',target:{clip:2},split:[{from:'timeline',seconds:2},{from:'timeline',seconds:4}]}]);
+  const result=compileAnswer(request,plan,raw);
+  assert.deepEqual(applyCommands(request.project.edits,result.batch.commands,12).clips.map(c=>[c.start,c.end]),[[0,4],[6,8],[8,10],[10,12]]);
 });
