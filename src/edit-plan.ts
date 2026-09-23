@@ -1,4 +1,4 @@
-import type { ClipZoom, Edits } from './types';
+import type { ClipZoom, Edits } from './types.js';
 
 export const MAX_EDITS = 8;
 export type Target = 'all' | 'selected' | 'first' | 'last' | 'middle' | 'previous' | { clip: number } | { original: number } | { split: number | 'latest'; side: 'left' | 'right' };

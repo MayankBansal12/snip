@@ -1,4 +1,4 @@
-import type { Annotation, Edits } from '../types';
+import type { Annotation, Edits } from '../types.js';
 
 const INVALID = 'This project is incomplete or damaged. Your current workspace hasn’t changed.';
 const fail = (): never => { throw new Error(INVALID); };
@@ -80,4 +80,3 @@ export function validateEdits(value: unknown, duration: number, endpointToleranc
     format: choice(e.format, ['mp4', 'webm']), quality: choice(e.quality, ['maximum', 'compact']),
   };
 }
-

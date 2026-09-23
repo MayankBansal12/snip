@@ -1,5 +1,5 @@
-import { clamp, clipCrop, clipDuration, cropPixels } from './types';
-import type { ClipZoom, Edits, Source } from './types';
+import { clamp, clipCrop, clipDuration, cropPixels } from './types.js';
+import type { ClipZoom, Edits, Source } from './types.js';
 
 type Viewport = ReturnType<typeof cropPixels>;
 export const ZOOM_TRANSITION_SECONDS = .55;
