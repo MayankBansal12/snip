@@ -3,15 +3,15 @@ import { Check, ChevronDown, Copy } from 'lucide-react';
 import { Button } from './ui/button';
 import { Popover, PopoverDescription, PopoverPopup, PopoverTitle, PopoverTrigger } from './ui/popover';
 
-const repository = 'https://github.com/MayankBansal12/snip/tree/feat/deterministic-editing-engine';
+const repository = 'https://github.com/MayankBansal12/snip';
 const introduction = 'Hey, help me edit a video with Snip. Connect its local MCP server, ask what edits I want, and let me preview before exporting.';
 const config = JSON.stringify({ mcpServers: { snip: { command: 'node', args: ['/absolute/path/to/snip/scripts/mcp-server.mjs'], env: { SNIP_PORT: '5188' } } } }, null, 2);
 const prompt = `${introduction}
 
-Set up Snip from ${repository} using docs/editing-engine.md. For this preview, use the feat/deterministic-editing-engine branch, not main. Clone it into a new directory:
+Set up Snip from ${repository} using docs/editing-engine.md. Clone the main branch into a new directory:
 
-git clone --branch feat/deterministic-editing-engine --single-branch https://github.com/MayankBansal12/snip.git snip-agent-preview
-cd snip-agent-preview
+git clone --branch main --single-branch https://github.com/MayankBansal12/snip.git snip-agent
+cd snip-agent
 npm ci
 npm run build
 
@@ -57,7 +57,7 @@ export default function AgentOnboarding() {
           <Button size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? 'copied' : 'copy prompt'}</Button>
         </div>
       </div>
-      <span className="sr-only" role="status">{copied ? 'Full prompt and MCP configuration copied' : ''}</span>
+      <span className="sr-only" role="status">{copied ? 'Prompt copied' : ''}</span>
       {error && <p role="alert" className="mt-2 text-sm text-destructive-foreground">{error}</p>}
     </PopoverPopup>
   </Popover>;
