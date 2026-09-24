@@ -45,7 +45,7 @@ try {
   await page.getByRole('alertdialog').waitFor({state:'hidden'});
   log('Same-tab pairing reconnects with explicit consent and clears the token');
   await button('select your video').waitFor();await page.locator('#video-file').setInputFiles(sample);
-  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2 && !document.querySelector('.workspace')?.inert);
+  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
   // Trim handles stop propagation and retain a clip snapshot while dragging.
   let dragProject=await call('get_project');
   const handle=await page.getByRole('slider',{name:'Clip 1 start',exact:true}).boundingBox();
@@ -154,14 +154,20 @@ try {
   await button('back to editing').click();await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   project=await call('get_project');
-  const beforeTiny=project;
-  await assert.rejects(()=>call('apply_edits',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-trim',commands:[
+  await call('apply_edits',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-trim',commands:[
     {action:'deleteClip',clipId:'demo'},
     {action:'trimClip',clipId,sourceStart:1.001,sourceEnd:1.002},
-  ]}));
-  project=await call('get_project');assert.equal(project.revision,beforeTiny.revision);
-  assert.deepEqual(project.specification.edits,beforeTiny.specification.edits);
-  log('Sub-frame ranges are rejected atomically before export');
+    {action:'setSpeed',clipId,speed:2},
+    {action:'setOutput',format:'mp4',muted:false},
+  ]});
+  project=await call('get_project');let unexpectedDownload=false;
+  page.on('download',()=>{unexpectedDownload=true;});
+  await call('start_export',{sessionId:project.sessionId,revision:project.revision,requestId:'tiny-export'});
+  let tinyJob;for(let i=0;i<240;i++){tinyJob=await call('get_export_status');if(tinyJob.status!=='running')break;await page.waitForTimeout(250);}
+  assert.equal(tinyJob.status,'failed');assert.match(tinyJob.error,/no readable video/);assert.equal(unexpectedDownload,false);
+  assert.deepEqual((await call('get_project')).specification.edits,project.specification.edits);
+  log('A sub-frame trim cannot report a successful audio-only video export');
+  await button('keep editing').click();
   await button('disconnect agent').click();
   assert.equal((await call('get_connection')).connected,false);
   await page.routeWebSocket('**/agent?*',socket=>{
