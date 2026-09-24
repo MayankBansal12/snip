@@ -14,9 +14,9 @@ please report failures by opening an issue. pull requests are welcome.
 
 ## JSON editing and agents
 
-Choose **use snip with your agent** in the start screen or editor header to copy a complete setup prompt with MCP configuration. The editor and agent share a validated TypeScript editing core, with undo, revision checks, and retry protection. Browser exports use a fixed FFmpeg profile for repeatability.
+Choose **use snip with your agent** to copy a setup prompt. When hosted MCP is configured, open a video, give the prompt to your agent, enter the pairing code during authorization, and approve access in the existing editor tab. No clone or local bridge is needed for that flow. The editor and agent share a validated TypeScript editing core, with undo, revision checks, and retry protection. Browser exports use a fixed FFmpeg profile for repeatability.
 
-The MCP bridge can run locally or on a headless VM behind an authenticated HTTPS tunnel. It lets an agent inspect and edit the open project and start an export. Video stays in the browser; the result is a local download. See [setup, JSON format, and rendering guarantees](docs/editing-engine.md).
+The hosted relay uses MCP over HTTPS and a WebSocket to the approved tab. Video stays in the browser; requested frames can be shared with the agent and exports download locally. Set `VITE_SNIP_MCP_ORIGIN` in the website build to enable it. `render.yaml` configures a single-instance relay; [setup and deployment instructions](docs/editing-engine.md#deploy-the-https-endpoint-on-render) cover its environment variables and lifecycle. The original local/VM bridge remains available under **use local setup instead**, and stays the default when no hosted relay is configured.
 
 ## Edit with Jev
 

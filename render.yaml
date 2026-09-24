@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: snip-mcp
+    runtime: node
+    plan: 0.5c-512mb
+    numInstances: 1
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run mcp:hosted
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SNIP_APP_ORIGINS
+        value: https://snip.mayank.fyi
+      - key: SNIP_TRUST_PROXY
+        value: "1"
