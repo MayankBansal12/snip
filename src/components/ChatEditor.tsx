@@ -41,10 +41,10 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
   function cancel() { controller.current?.abort(); controller.current = null; setPending(false); setResult({ message: 'Edit cancelled. Your video hasn’t changed.' }); }
   const visibleResult = result && (result.revision === undefined || result.revision === revision) ? result : null;
   return <section className="chat-editor" aria-label="edit with chat">
-    <form className={`flex items-end gap-x-3 gap-y-2 ${visibleResult?.error ? 'flex-wrap' : ''}`} aria-busy={pending} onSubmit={e => { e.preventDefault(); void submit(); }}>
+    <form className={`flex min-w-0 items-center gap-x-3 gap-y-2 ${visibleResult?.error ? 'flex-wrap' : ''}`} aria-busy={pending} onSubmit={e => { e.preventDefault(); void submit(); }}>
       <textarea id="edit-prompt" ref={input} value={text} maxLength={1200} readOnly={pending} rows={1}
-        className="chat-prompt block min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/55"
-        placeholder={visibleResult && !visibleResult.error ? '' : 'describe your edit…'} aria-label="what would you like to change?"
+        className="chat-prompt block min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground/55"
+        placeholder={visibleResult && !visibleResult.error ? '' : 'describe an edit…'} aria-label="what would you like to change?"
         aria-describedby={visibleResult ? 'chat-status' : undefined}
         onChange={e => { setText(e.target.value); setResult(null); }}
         onKeyDown={e => {
@@ -58,11 +58,11 @@ export default function ChatEditor({ onSubmit, onUndo, onRedo, canUndo, canRedo,
           <span className={visibleResult.error ? 'w-full' : 'truncate'}>{visibleResult.message}</span>
         </span>}
       </div>
-      <div className="flex shrink-0 items-center gap-1 pb-0.5">
-        <IconButton label="undo" size="icon-sm" disabled={!canUndo || pending} onClick={() => { onUndo(); setResult({ message: 'edit undone' }); }}><Undo2 /></IconButton>
-        <IconButton label="redo" size="icon-sm" disabled={!canRedo || pending} onClick={() => { onRedo(); setResult({ message: 'edit restored' }); }}><Redo2 /></IconButton>
-        {pending ? <Button key="cancel" type="button" size="icon-sm" variant="outline" aria-label="cancel edit" onClick={e => { e.preventDefault(); cancel(); }}><Square className="size-3" fill="currentColor" /></Button>
-          : <Button key="submit" type="submit" size="icon-sm" aria-label="apply edit" disabled={!text.trim()}><ArrowUp /></Button>}
+      <div className="flex shrink-0 items-center gap-1">
+        <IconButton label="undo" size="icon-xs" disabled={!canUndo || pending} onClick={() => { onUndo(); setResult({ message: 'edit undone' }); }}><Undo2 /></IconButton>
+        <IconButton label="redo" size="icon-xs" disabled={!canRedo || pending} onClick={() => { onRedo(); setResult({ message: 'edit restored' }); }}><Redo2 /></IconButton>
+        {pending ? <Button key="cancel" type="button" size="icon-xs" variant="outline" aria-label="cancel edit" onClick={e => { e.preventDefault(); cancel(); }}><Square className="size-3" fill="currentColor" /></Button>
+          : <Button key="submit" type="submit" size="icon-xs" aria-label="apply edit" disabled={!text.trim()}><ArrowUp /></Button>}
       </div>
     </form>
   </section>;

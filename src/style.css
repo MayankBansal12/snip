@@ -103,8 +103,11 @@ body { text-transform: lowercase; }
 }
 
 .timeline-toolbar, .timeline-foot { align-items: center; }
-.timeline-toolbar[data-chat=true] { align-items: flex-start; }
-.timeline-toolbar[data-chat=true] > .editor-mode-switch { margin-top: 7px; }
+.timeline-toolbar { min-height: 40px; }
+.timeline-toolbar > .editor-mode-switch { width: 120px; }
+@media (max-width: 640px) {
+  .timeline-toolbar > .editor-mode-switch { width: 72px; }
+}
 .timeline-clip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
 
 .timeline [data-slot=kbd] { height: 16px; min-width: 16px; font-size: 10px; }
@@ -125,7 +128,7 @@ body { text-transform: lowercase; }
 
 /* Chat uses the same compact panel and keyboard-first controls as the timeline. */
 .editor-controls:has(.chat-editor:focus-within) { border-color: color-mix(in oklab, var(--primary) 45%, var(--border)); }
-.chat-prompt { min-height: 38px; max-height: 160px; field-sizing: content; }
+.chat-prompt { height: 32px; min-height: 32px; max-height: 32px; field-sizing: fixed; overflow-y: auto; }
 .chat-feedback { max-width: min(50%, calc(100% - 128px)); }
 .chat-editor button:active:not(:disabled) { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .chat-editor button:active:not(:disabled) { transform: none; } }
