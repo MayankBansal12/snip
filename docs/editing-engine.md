@@ -23,6 +23,41 @@ The agent talks to the relay over HTTPS; the open editor connects outward using 
 
 The browser retries brief connection losses with exponential backoff. A disconnected session has a 60-second grace period, and commands fail while offline; edits are never queued for replay. Keep the tab open. **disconnect agent**, replacing the source/project, or clearing the project revokes the grant. Refreshing the tab, expiration, or a relay restart requires a new pairing. An agent's existing credentials do not authorize a different tab or project.
 
+### Deploy the relay with Docker on a VM
+
+Keep the website on Vercel and run [`compose.mcp.yaml`](../compose.mcp.yaml) on an always-on VM. The image installs only the relay's locked runtime dependencies, without the frontend, FFmpeg, or a browser. It runs as an unprivileged user with a read-only filesystem, a 512 MiB memory limit, bounded logs, a health check, and automatic restart after crashes or host reboots. Use one relay instance: authorization and browser connections live in memory.
+
+From a checkout containing this feature, with Docker Engine and Compose installed:
+
+```sh
+SNIP_IMAGE_TAG=$(git rev-parse --short HEAD) docker compose -f compose.mcp.yaml up -d --build --wait
+curl --fail http://127.0.0.1:5189/healthz
+docker compose -f compose.mcp.yaml ps
+```
+
+The defaults are `SNIP_RELAY_ORIGIN=https://snip-mcp.mayank.fyi` and `SNIP_APP_ORIGINS=https://snip.mayank.fyi`. Override them through the shell or a Compose `--env-file`. Set `SNIP_CLIENT_ORIGINS` only for browser-based MCP clients that send an Origin header. Set `SNIP_TRUST_PROXY` to the known proxy hop count once HTTPS ingress is configured; it defaults to zero.
+
+The container publishes HTTP only on the VM's `127.0.0.1:5189`. Route **all paths**, including OAuth discovery, `/connect`, `/mcp`, and the `/browser` WebSocket, through a public HTTPS proxy for `snip-mcp.mayank.fyi`. Preserve the canonical Host and the browser's Origin header, support WebSocket upgrades, and omit credentials/query strings from access logs. An existing public gateway can forward to the VM; a VM with a public IP can terminate TLS with a reverse proxy. A private VM needs a public gateway or a named tunnel first. A CNAME alone cannot make a private VM reachable.
+
+Cloudflare Tunnel is an alternative when the domain uses Cloudflare DNS. The optional `tunnel` Compose profile runs a pinned connector image, with an outbound HTTP/2 connection and no published ports. [Create a remotely managed tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel-api/) with this ingress configuration:
+
+```json
+{
+  "ingress": [
+    { "hostname": "snip-mcp.mayank.fyi", "service": "http://snip-mcp:5189" },
+    { "service": "http_status:404" }
+  ]
+}
+```
+
+Place its connector token in `.secrets/cloudflare-tunnel-token` on the VM. Keep `.secrets` owned by the deployment user with mode `0700`; the token file can have mode `0444` inside that protected directory so the container's unprivileged user can read the mounted secret. Neither the token nor Cloudflare account credentials belong in the image or Git. Start with `SNIP_TRUST_PROXY=1 SNIP_IMAGE_TAG=<deployed-tag> docker compose -f compose.mcp.yaml --profile tunnel up -d --wait`. Persist these non-secret settings in a VM-local `.env` for subsequent updates. The connector preserves the hostname and browser Origin; the relay uses its own OAuth authorization, so do not place a Cloudflare Access login in front of it. Check connector readiness with `docker compose -f compose.mcp.yaml exec -T snip-mcp node -e "fetch('http://cloudflared:2000/ready').then(r => process.exit(r.ok ? 0 : 1))"`.
+
+Add a **proxied CNAME** named `snip-mcp` to `<tunnel-id>.cfargotunnel.com` in the same Cloudflare account. The standard setup requires the domain's DNS to be active on Cloudflare; a CNAME at an unrelated DNS provider is insufficient. Preserve existing DNS records before moving nameservers. A temporary quick-tunnel URL is unsuitable for the canonical production endpoint.
+
+Once public HTTPS works, set **`VITE_SNIP_MCP_ORIGIN=https://snip-mcp.mayank.fyi`** in Vercel's website build environment and redeploy the branch containing the hosted feature. Do not append `/mcp` to this variable. The agent endpoint is `https://snip-mcp.mayank.fyi/mcp`. Check public `/healthz`, OAuth discovery, unauthenticated `/mcp` returning 401, and browser pairing/edit/export before rollout.
+
+For updates, deploy a reviewed commit and repeat the build/start command. Logs are available with `docker compose -f compose.mcp.yaml logs --tail=100 snip-mcp`; restart with `docker compose -f compose.mcp.yaml restart snip-mcp`. Keep a prior image tag for rollback using `SNIP_IMAGE_TAG=<prior-tag> docker compose -f compose.mcp.yaml up -d --no-build --wait`. Restarts and rollbacks require clients to pair again and may require removing/re-adding the MCP connection to reset its OAuth registration. The relay needs no persistent volume or database.
+
 ### Deploy the HTTPS endpoint on Render
 
 Use one always-on Node web service. [`render.yaml`](../render.yaml) supplies the service configuration, an explicit single instance, and `/healthz` for health checks. [Render supports inbound WebSockets on the same public port as HTTP](https://render.com/docs/websocket).
@@ -31,7 +66,7 @@ Use one always-on Node web service. [`render.yaml`](../render.yaml) supplies the
 2. Set `SNIP_APP_ORIGINS` to the exact origin serving the editor, such as `https://snip.mayank.fyi`. Multiple allowed editor origins are comma-separated; there are no wildcard origins. The blueprint sets Node 22 and `SNIP_TRUST_PROXY=1` for Render's proxy.
 3. Render supplies `PORT` and `RENDER_EXTERNAL_URL`. The service uses that URL as its canonical HTTPS origin unless `SNIP_RELAY_ORIGIN` is set. The MCP endpoint is **`https://<your-service>.onrender.com/mcp`**.
 4. In the website's build environment, set **`VITE_SNIP_MCP_ORIGIN=https://<your-service>.onrender.com`**, without `/mcp`, then rebuild/redeploy the website. The editor can stay on its existing host.
-5. For a custom domain such as `mcp.snip.mayank.fyi`, configure its DNS/TLS in Render, set `SNIP_RELAY_ORIGIN=https://mcp.snip.mayank.fyi` on the relay, and update `VITE_SNIP_MCP_ORIGIN` on the website. Requests must use that canonical Host. If a browser-based MCP client sends an Origin header, add its exact origin to `SNIP_CLIENT_ORIGINS`; this does not authorize it as an editor browser.
+5. For a custom domain such as `snip-mcp.mayank.fyi`, configure its DNS/TLS in Render, set `SNIP_RELAY_ORIGIN=https://snip-mcp.mayank.fyi` on the relay, and update `VITE_SNIP_MCP_ORIGIN` on the website. Requests must use that canonical Host. If a browser-based MCP client sends an Origin header, add its exact origin to `SNIP_CLIENT_ORIGINS`; this does not authorize it as an editor browser.
 6. Check `/healthz`, confirm unauthenticated `/mcp` returns 401 with OAuth metadata, and run the pairing/edit/export flow using your actual agent client.
 
 There is no database dependency in this version. Connection routing, OAuth registrations, and grants live in process memory. **Run exactly one Node process/instance; do not enable autoscaling or cluster workers.** A restart invalidates pairings and OAuth registrations. Reconnect/re-register the client after a restart; clients that retain invalid registration credentials may need their Snip connection removed and re-added. Multiple instances would require shared authorization state and routing/pub-sub to the process holding each browser socket.

@@ -114,7 +114,7 @@ export function createHostedServer({ publicOrigin, appOrigins, clientOrigins = [
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const relay = createHostedServer({ publicOrigin: process.env.SNIP_RELAY_ORIGIN || process.env.RENDER_EXTERNAL_URL,
     appOrigins: process.env.SNIP_APP_ORIGINS?.split(',').map(s => s.trim()),
-    clientOrigins: process.env.SNIP_CLIENT_ORIGINS?.split(',').map(s => s.trim()) || [],
+    clientOrigins: process.env.SNIP_CLIENT_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) || [],
     trustProxy: Number(process.env.SNIP_TRUST_PROXY || 0) });
   relay.http.listen(Number(process.env.PORT || 5189), '0.0.0.0', () => console.log('Snip hosted MCP relay is ready.'));
   const stop = () => { void relay.close().then(() => process.exit(0)); };

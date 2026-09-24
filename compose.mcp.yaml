@@ -1,0 +1,53 @@
+name: snip-mcp
+
+services:
+  snip-mcp:
+    image: snip-mcp:${SNIP_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/mcp/Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      SNIP_RELAY_ORIGIN: ${SNIP_RELAY_ORIGIN:-https://snip-mcp.mayank.fyi}
+      SNIP_APP_ORIGINS: ${SNIP_APP_ORIGINS:-https://snip.mayank.fyi}
+      SNIP_CLIENT_ORIGINS: ${SNIP_CLIENT_ORIGINS:-}
+      SNIP_TRUST_PROXY: ${SNIP_TRUST_PROXY:-0}
+    ports:
+      - "127.0.0.1:5189:5189"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    command: [tunnel, --no-autoupdate, --protocol, http2, --metrics, "0.0.0.0:2000", run, --token-file, /run/secrets/cloudflare_tunnel_token]
+    depends_on:
+      snip-mcp:
+        condition: service_healthy
+    secrets: [cloudflare_tunnel_token]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  cloudflare_tunnel_token:
+    file: ./.secrets/cloudflare-tunnel-token

@@ -1,0 +1,13 @@
+# Allow only the standalone relay and its runtime dependency lock into the build.
+**
+!deploy/
+!deploy/mcp/
+!deploy/mcp/package.json
+!deploy/mcp/package-lock.json
+!deploy/mcp/Dockerfile
+!scripts/
+!scripts/hosted-server.mjs
+!scripts/hosted-auth.mjs
+!scripts/hosted-sessions.mjs
+!scripts/mcp-tools.mjs
+!scripts/bridge-origin.mjs

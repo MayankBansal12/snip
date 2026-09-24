@@ -3,12 +3,34 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { WebSocket } from 'ws';
 import { createHostedServer } from '../scripts/hosted-server.mjs';
 
 const browserOrigin = 'http://localhost:5173';
+
+test('standalone relay starts with an empty optional client-origin environment setting', { timeout: 5000 }, async t => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../scripts/hosted-server.mjs', import.meta.url))], {
+    env: { ...process.env, PORT: '0', SNIP_RELAY_ORIGIN: 'https://snip-mcp.example.com',
+      SNIP_APP_ORIGINS: 'https://snip.example.com', SNIP_CLIENT_ORIGINS: '', SNIP_TRUST_PROXY: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'], signal: t.signal,
+  });
+  let stderr = '';
+  child.stderr.on('data', data => { stderr += data; });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit'); child.kill(); await exited;
+    }
+  });
+  await Promise.race([
+    once(child.stdout, 'data').then(([data]) => assert.match(data.toString(), /relay is ready/)),
+    once(child, 'exit').then(([code]) => { throw new Error(`Relay exited during startup (${code}): ${stderr}`); }),
+  ]);
+});
+
 async function fixture(t, options = {}) {
   const reservation = createServer();
   reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
