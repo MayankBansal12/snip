@@ -150,14 +150,21 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
       picture.push('setsar=1');
       graph.push(`[${count>1?`vs${i}`:'0:v:0'}]${picture.join(',')}[v${i}]`);
       if(hasAudio){
+        const segmentDuration=(clip.end-clip.start)/speed;
         const tempo:string[]=[];let rate=speed;
-        while(rate>2){tempo.push('atempo=2');rate/=2;}while(rate<.5){tempo.push('atempo=0.5');rate/=.5;}
-        tempo.push(`atempo=${rate}`);
-        // Pad short audio tails to the exact clip duration before concatenating.
-        graph.push(`[${count>1?`as${i}`:'0:a:0'}]atrim=start=${clip.start-seek}:end=${clip.end-seek},asetpts=PTS-STARTPTS,${tempo.join(',')},apad,atrim=duration=${(clip.end-clip.start)/speed},asetpts=PTS-STARTPTS[a${i}]`);
+        if(speed!==1){while(rate>2){tempo.push('atempo=2');rate/=2;}while(rate<.5){tempo.push('atempo=0.5');rate/=.5;}tempo.push(`atempo=${rate}`);}
+        // Finite padding before tempo gives short clips enough samples to
+        // flush the filter while preserving their real audio at the start.
+        graph.push(`[${count>1?`as${i}`:'0:a:0'}]atrim=start=${clip.start-seek}:end=${clip.end-seek},asetpts=PTS-STARTPTS,apad=whole_dur=${clip.end-clip.start+.2},${tempo.length?`${tempo.join(',')},`:''}atrim=duration=${segmentDuration},asetpts=PTS-STARTPTS[a${i}]`);
+      }else if(count>1){
+        // Concat cannot infer a one-frame video's duration from its PTS alone.
+        // A discarded silent track gives every segment its exact time span.
+        graph.push(`anullsrc=r=48000:cl=mono,atrim=duration=${(clip.end-clip.start)/speed},asetpts=PTS-STARTPTS[a${i}]`);
       }
     });
-    graph.push(`${edits.clips.map((_,i)=>`[v${i}]${hasAudio?`[a${i}]`:''}`).join('')}concat=n=${count}:v=1:a=${hasAudio?1:0}[joined]${hasAudio?'[audio]':''}`);
+    const concatAudio=hasAudio||count>1;
+    graph.push(`${edits.clips.map((_,i)=>`[v${i}]${concatAudio?`[a${i}]`:''}`).join('')}concat=n=${count}:v=1:a=${concatAudio?1:0}[joined]${concatAudio?'[audio]':''}`);
+    if(concatAudio&&!hasAudio)graph.push('[audio]anullsink');
     const filters=['setsar=1'];
     const lut=colorLut(edits);if(lut){await ffmpeg.writeFile('grade.cube',lut);filters.push('lut3d=file=grade.cube:interp=tetrahedral');}
     graph.push(`[joined]${filters.join(',')}[picture]`);

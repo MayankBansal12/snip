@@ -37,6 +37,11 @@ import { AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, Ale
 import { TooltipProvider } from './components/ui/tooltip';
 import IconButton from './components/IconButton';
 function initialTheme(){try{return localStorage.getItem('snip-theme')|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch{return'light';}}
+function sourceAtPlayhead(edits:Edits,index:number,sequenceTime:number){
+  const clip=edits.clips[index];
+  const before=edits.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,edits),0);
+  return clamp(clip.start+(sequenceTime-before)*clipSpeed(clip,edits),clip.start,clip.end);
+}
 export default function App(){
   const [agentToken,setAgentToken]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('agent'));
   useEffect(()=>{
@@ -131,13 +136,17 @@ export default function App(){
     if(frame<range.first&&i>0){clip=e.clips[--i];range=retainedFrames(frameIndex,clip);frame=range.after-1;}
     else if(frame>=range.after&&i<e.clips.length-1){clip=e.clips[++i];range=retainedFrames(frameIndex,clip);frame=range.first;}
     if(range.after<=range.first)return;
-    seek(toSequenceTime(boundary(frameIndex,clamp(frame,range.first,range.after-1)),e,i));
+    const selectedFrame=clamp(frame,range.first,range.after-1);
+    pausePlayback();
+    if(videoRef.current){videoRef.current.currentTime=previewTimestamp(frameIndex,selectedFrame);videoRef.current.playbackRate=clipSpeed(clip,e);}
+    activeClip.current=i;setSelectedClip(clip.id);setTime(toSequenceTime(boundary(frameIndex,selectedFrame),e,i));
   };
   const togglePlayback=useCallback(()=>{if(!busy)playback.current?.toggle();},[busy]);
-  const splitLocation=toSourceTime(time,edits),at=edits.clips[splitLocation.index];
+  const playheadIndex=clamp(activeClip.current,0,edits.clips.length-1),at=edits.clips[playheadIndex];
+  const playheadSource=sourceAtPlayhead(edits,playheadIndex,time);
   const selectedRange=frameIndex&&at?retainedFrames(frameIndex,at):null;
-  const sourceFrame=frameIndex&&selectedRange&&selectedRange.after>selectedRange.first?frameAt(frameIndex,splitLocation.time,at):null;
-  const splitTime=frameIndex?nearestBoundary(frameIndex,splitLocation.time):splitLocation.time;
+  const sourceFrame=frameIndex&&selectedRange&&selectedRange.after>selectedRange.first?frameAt(frameIndex,playheadSource,at):null;
+  const splitTime=frameIndex?nearestBoundary(frameIndex,playheadSource):playheadSource;
   const canSplit=!indexing&&!!at&&(frameIndex?splitTime>at.start+1e-7&&splitTime<at.end-1e-7:splitTime-at.start>=.1&&at.end-splitTime>=.1);
   const split=()=>{if(!canSplit)return;pausePlayback();const rightId=uid();command([{action:'splitClip',clipId:at.id,sourceTime:splitTime,rightClipId:rightId}]);setSelectedClip(rightId);};
   const deleteClip=useCallback(()=>{const e=editsRef.current;pausePlayback();setActionsOpen(false);if(e.clips.length<2){setConfirmClear(true);return;}command([{action:'deleteClip',clipId:selectedClip}]);},[selectedClip,command,pausePlayback]);
@@ -168,8 +177,9 @@ export default function App(){
   };
   const trimAtPlayhead=(edge:'start'|'end')=>{
     if(indexing)return;
-    const e=editsRef.current,p=toSourceTime(time,e),c=e.clips[p.index];
-    const value=frameIndex?trimBoundary(frameIndex,c,edge,p.time,trimBounds(e.clips,c,source!.duration)):p.time;
+    const e=editsRef.current,index=clamp(activeClip.current,0,e.clips.length-1),c=e.clips[index];
+    const playheadSource=sourceAtPlayhead(e,index,time);
+    const value=frameIndex?trimBoundary(frameIndex,c,edge,playheadSource,trimBounds(e.clips,c,source!.duration)):playheadSource;
     if(edge==='start'?(value<=c.start||c.end-value<(frameIndex?1e-7:.1)):(value>=c.end||value-c.start<(frameIndex?1e-7:.1)))return;
     pausePlayback();command([{action:'trimClip',clipId:c.id,sourceStart:edge==='start'?value:c.start,sourceEnd:edge==='end'?value:c.end}]);
   };

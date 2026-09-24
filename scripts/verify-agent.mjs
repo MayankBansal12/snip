@@ -162,7 +162,6 @@ try {
   project=await call('get_project');assert.equal(project.revision,beforeTiny.revision);
   assert.deepEqual(project.specification.edits,beforeTiny.specification.edits);
   log('Sub-frame ranges are rejected atomically before export');
-  await button('keep editing').click();
   await button('disconnect agent').click();
   assert.equal((await call('get_connection')).connected,false);
   await page.routeWebSocket('**/agent?*',socket=>{
