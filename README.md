@@ -14,9 +14,9 @@ please report failures by opening an issue. pull requests are welcome.
 
 ## JSON editing and agents
 
-Choose **use snip with your agent** to copy a setup prompt. When hosted MCP is configured, open a video, give the prompt to your agent, enter the pairing code during authorization, and approve access in the existing editor tab. No clone or local bridge is needed for that flow. The editor and agent share a validated TypeScript editing core, with undo, revision checks, and retry protection. Browser exports use a fixed FFmpeg profile for repeatability.
+Choose **use snip with your agent** to inspect or copy a static setup prompt; neither action starts a connection. When hosted MCP is configured, give the prompt to your agent, open the one-time authorization link it returns, choose **Open Snip to connect**, and approve the matching request in Snip. The prompt directs the agent to use the browser connection first and to ask for confirmation before cloning the repository for local fallback. The editor and agent share a validated TypeScript editing core, with undo, revision checks, and retry protection. Browser exports use a fixed FFmpeg profile for repeatability.
 
-The hosted relay uses MCP over HTTPS and a WebSocket to the approved tab. Video stays in the browser; requested frames can be shared with the agent and exports download locally. Set `VITE_SNIP_MCP_ORIGIN` in the website build to enable it. Run the relay with [Docker on a VM](docs/editing-engine.md#deploy-the-relay-with-docker-on-a-vm) or [Render](docs/editing-engine.md#deploy-the-https-endpoint-on-render). The original local/VM bridge remains available under **use local setup instead**, and stays the default when no hosted relay is configured.
+The hosted relay uses MCP over HTTPS and a WebSocket to the approved tab. Video stays in the browser; requested frames can be shared with the agent and exports download locally. Set `VITE_SNIP_MCP_ORIGIN` in the website build to enable it. Run the relay with [Docker on a VM](docs/editing-engine.md#deploy-the-relay-with-docker-on-a-vm) or [Render](docs/editing-engine.md#deploy-the-https-endpoint-on-render). The original local/VM bridge remains the fallback when no hosted relay is configured.
 
 ## Edit with Jev
 

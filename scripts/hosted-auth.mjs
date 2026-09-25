@@ -8,8 +8,8 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 
 /** OAuth credentials authorize one explicitly approved browser session, not an account. */
 export class HostedAuth {
-  constructor(sessions, origin, { now = Date.now, limit = 1000 } = {}) {
-    Object.assign(this, { sessions, origin, now, limit });
+  constructor(sessions, origin, appOrigin, { now = Date.now, limit = 1000 } = {}) {
+    Object.assign(this, { sessions, origin, appOrigin, now, limit });
     this.resource = `${origin}/mcp`;
     this.clients = new Map();
     this.flows = new Map();
@@ -38,9 +38,8 @@ export class HostedAuth {
       const flow = this.flows.get(requestId);
       if (!flow || flow.expiresAt <= now() || flow.sessionId !== session.id || session.flowId !== requestId || flow.status !== 'pending') return;
       session.flowId = undefined;
-      if (!approved) { flow.status = 'denied'; return; }
+      if (!approved) { flow.status = 'denied'; sessions.revoke(session); return; }
       session.approved = true;
-      session.code = undefined; // single-use pairing code
       flow.status = 'approved';
       flow.code = secret();
       this.codes.set(flow.code, { ...flow, expiresAt: now() + 60_000 });
@@ -68,6 +67,16 @@ export class HostedAuth {
     this.flows.set(id, { id, clientId: client.client_id, clientName: client.client_name || 'MCP client',
       ...params, status: 'new', attempts: 0, verification: randomBytes(4).toString('hex'), expiresAt: this.now() + 5 * 60_000 });
     res.redirect(303, `${this.origin}/connect?flow=${id}`);
+  }
+
+  attachFlow(session, id) {
+    const flow = this.getFlow(id);
+    if (!flow || flow.status !== 'new' || flow.sessionId || session.flowId || session.approved)
+      throw new InvalidRequestError('Connection link expired or already used.');
+    flow.sessionId = session.id;
+    flow.status = 'pending';
+    session.flowId = flow.id;
+    this.sessions.send(session, { type: 'pair_request', requestId: flow.id, clientName: flow.clientName, verification: flow.verification });
   }
 
   validCode(client, code) {
@@ -142,12 +151,9 @@ export class HostedAuth {
   connectRouter() {
     const router = express.Router();
     router.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
-    router.use(express.urlencoded({ extended: false, limit: '4kb' }));
     router.use((req, res, next) => {
-      // Keep same-origin form POSTs' Origin header, without leaking flow query strings.
       res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'strict-origin', 'X-Frame-Options': 'DENY',
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
-      if (req.method === 'POST' && req.headers.origin !== this.origin) { res.sendStatus(403); return; }
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'" });
       next();
     });
     router.get('/poll.js', (_req, res) => res.type('js').send(`
@@ -179,19 +185,6 @@ export class HostedAuth {
       if (!flow) { res.status(410).send('Connection expired. Start again from your agent.'); return; }
       res.type('html').send(this.page(flow));
     });
-    router.post('/', (req, res) => {
-      const flow = this.getFlow(req.body.flow);
-      if (!flow || flow.status !== 'new' || flow.attempts >= 5) { res.status(410).send('Connection expired. Start again from your agent.'); return; }
-      flow.attempts++;
-      const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-      const session = this.sessions.findPairing(code);
-      if (!session || session.flowId) { res.status(400).type('html').send(this.page(flow, 'That code is expired, already in use, or incorrect. Copy a new prompt from Snip.')); return; }
-      flow.sessionId = session.id;
-      flow.status = 'pending';
-      session.flowId = flow.id;
-      this.sessions.send(session, { type: 'pair_request', requestId: flow.id, clientName: flow.clientName, verification: flow.verification });
-      res.redirect(303, `/connect?flow=${flow.id}`);
-    });
     return router;
   }
 
@@ -200,17 +193,15 @@ export class HostedAuth {
     return flow && flow.expiresAt > this.now() ? flow : undefined;
   }
 
-  page(flow, error = '') {
+  page(flow) {
     const pending = flow.status !== 'new';
     return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-      <title>Connect your agent · Snip</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:440px;margin:12vh auto;padding:24px;color:#222;background:#fafafa}h1{font-size:28px}input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;margin-top:12px;border:1px solid #bbb;border-radius:8px}button{background:#222;color:white;cursor:pointer}code{font-size:20px}small{color:#555}</style>
+      <title>Connect your agent · Snip</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:440px;margin:12vh auto;padding:24px;color:#222;background:#fafafa}h1{font-size:28px}a{box-sizing:border-box;display:block;width:100%;font:inherit;text-align:center;text-decoration:none;padding:12px;margin-top:20px;border-radius:8px;background:#222;color:white}code{font-size:20px}small{color:#555}</style>
       <h1>Connect your agent to Snip</h1><p>Client: <strong>${escape(flow.clientName)}</strong></p>
       ${pending ? `<p id="status">Return to your open Snip tab and approve this connection. Check that both pages show <code>${escape(flow.verification)}</code>.</p><script src="/connect/poll.js" defer></script>`
-        : `<p>Enter the pairing code shown in Snip after you copy the agent prompt. Keep your editor tab open.</p>
-          ${error ? `<p role="alert">${escape(error)}</p>` : ''}
-          <form method="post" action="/connect"><input type="hidden" name="flow" value="${escape(flow.id)}">
-          <label for="code">Pairing code</label><input id="code" name="code" autocomplete="off" spellcheck="false" required maxlength="24" autofocus>
-          <button type="submit">Request connection</button></form>`}
+        : `<p>Open Snip, then approve the request only if it shows <code>${escape(flow.verification)}</code>. This one-time link expires in five minutes.</p>
+          <a href="${escape(`${this.appOrigin}/#hosted=${flow.id}`)}" target="_blank" rel="noopener">Open Snip to connect</a>
+          <p id="status">Waiting for approval in Snip…</p><script src="/connect/poll.js" defer></script>`}
       <p><small>The agent can read edit settings, request frame screenshots, change the project, and start an export. Full videos stay in your browser. Client names are self-reported; only approve a connection you initiated.</small></p></html>`;
   }
 }

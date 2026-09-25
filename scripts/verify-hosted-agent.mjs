@@ -54,19 +54,25 @@ const call = async (name, args = {}) => {
 };
 try {
   await page.goto(appOrigin);
-  await page.locator('#video-file').setInputFiles(sample);
-  await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await button('use snip with your agent').click();
+  assert.equal(await button('use local setup instead').count(), 0);
+  await button('view more').click();
+  const expandedPrompt = await page.getByLabel('full agent prompt').inputValue();
+  assert.match(expandedPrompt, /send it to me/);
   await button('copy prompt').click();
   await button('copied').waitFor();
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  assert.match(prompt, /remote MCP server/); assert.match(prompt, /Do not clone Snip/);
-  const code = prompt.match(/pairing code is ([a-f0-9]{24})/)[1];
+  assert.equal(prompt, expandedPrompt);
+  assert.ok(prompt.includes(`${relayOrigin}/mcp`)); assert.match(prompt, /Snip authorization link, send it to me/);
+  assert.match(prompt, /no video is open, ask me to select one in Snip/); assert.match(prompt, /preview them before you export/);
+  assert.match(prompt, /Only if I confirm, clone/); assert.ok(prompt.length < 900);
   assert.equal(prompt.includes('access_token'), false);
+  assert.equal(relay.sessions.sessions.size, 0); assert.equal(relay.auth.flows.size, 0);
   await page.keyboard.press('Escape');
   await assert.rejects(client.connect(transport), UnauthorizedError);
-  await authorization.getByLabel('Pairing code').fill(code);
-  await authorization.getByRole('button', { name: 'Request connection' }).click();
+  const connectLink = await authorization.getByRole('link', { name: 'Open Snip to connect' }).getAttribute('href');
+  assert.match(connectLink, new RegExp(`^${appOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/#hosted=`));
+  await page.goto(connectLink);
   await page.bringToFront();
   await page.getByRole('alertdialog').waitFor();
   const verification = await authorization.locator('code').innerText();
@@ -81,9 +87,14 @@ try {
   await transport.finishAuth(callback.searchParams.get('code'));
   await client.close();
   await client.connect(new StreamableHTTPClientTransport(new URL(`${relayOrigin}/mcp`), { authProvider }));
-  console.log('PASS standard MCP OAuth discovery, browser pairing, explicit approval and token exchange');
+  console.log('PASS static prompt, one-time connection link, explicit approval and OAuth token exchange');
   const connection = await call('get_connection');
   assert.equal(connection.mode, 'hosted'); assert.equal(connection.connected, true);
+  await assert.rejects(call('get_project'), /Open a video/);
+  await page.locator('#video-file').setInputFiles(sample);
+  await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+  assert.equal((await call('get_connection')).connected, true);
+  console.log('PASS connection works before video selection; opening the first video preserves it');
   const before = await call('get_project'), clipId = before.specification.edits.clips[0].id;
   const batch = { sessionId: before.sessionId, revision: before.revision, requestId: 'hosted-edit', commands: [
     { action: 'splitClip', clipId, sourceTime: 4, rightClipId: 'hosted-right' },

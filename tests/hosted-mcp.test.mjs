@@ -44,7 +44,9 @@ async function fixture(t, options = {}) {
   const post = (path, data, asJson = false, extra = {}) => request(path, { method: 'POST', redirect: 'manual',
     headers: { 'Content-Type': asJson ? 'application/json' : 'application/x-www-form-urlencoded', ...extra },
     body: asJson ? JSON.stringify(data) : new URLSearchParams(data) });
-  async function browser(marker = 'browser', resumeToken, originHeader = browserOrigin) {
+  async function browser(marker = 'browser', resumeToken, originHeader = browserOrigin, flowId) {
+    const authorization = !resumeToken && !flowId ? await begin() : undefined;
+    flowId ||= authorization?.flow;
     const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/browser`, { origin: originHeader });
     const queued = [], waiters = [];
     socket.on('message', data => {
@@ -68,12 +70,12 @@ async function fixture(t, options = {}) {
       });
     };
     await once(socket, 'open');
-    socket.send(JSON.stringify({ type: 'hello', resumeToken }));
+    socket.send(JSON.stringify({ type: 'hello', ...(resumeToken ? { resumeToken } : { flowId }) }));
     const ready = await next('hosted_ready');
     t.after(() => socket.terminate());
-    return { socket, ready, next };
+    return { socket, ready, next, flow: authorization };
   }
-  async function begin(code) {
+  async function begin() {
     const registered = await post('/register', { client_name: 'Test agent', redirect_uris: ['http://localhost:43210/callback'],
       token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }, true);
     assert.equal(registered.status, 201);
@@ -85,14 +87,19 @@ async function fixture(t, options = {}) {
     const response = await request(`/authorize?${query}`, { redirect: 'manual' });
     assert.equal(response.status, 303);
     const flow = new URL(response.headers.get('location')).searchParams.get('flow');
-    const pair = await post('/connect', { flow, code }, false, { Origin: origin });
-    return { client, verifier, flow, pair };
+    return { client, verifier, flow };
+  }
+  async function rejected(flowId, originHeader = browserOrigin) {
+    const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/browser`, { origin: originHeader });
+    await once(socket, 'open');
+    socket.send(JSON.stringify({ type: 'hello', flowId }));
+    return (await once(socket, 'close'))[0];
   }
   const exchange = (flow, code, overrides = {}) => post('/token', { client_id: flow.client.client_id,
     grant_type: 'authorization_code', code, code_verifier: flow.verifier, redirect_uri: flow.client.redirect_uris[0], resource: `${origin}/mcp`, ...overrides });
   async function approve(owner) {
-    const flow = await begin(owner.ready.code);
-    assert.equal(flow.pair.status, 303);
+    const flow = owner.flow;
+    assert(flow);
     const pending = await owner.next('pair_request');
     const before = await (await request(`/connect/status?flow=${flow.flow}`)).json();
     assert.deepEqual(before, { pending: true });
@@ -116,7 +123,7 @@ async function fixture(t, options = {}) {
     t.after(() => client.close());
     return client;
   }
-  return { relay, origin, request, post, browser, begin, approve, exchange, token, mcp };
+  return { relay, origin, request, post, browser, begin, rejected, approve, exchange, token, mcp };
 }
 
 test('hosted MCP requires authorization and exact configured origins; discovery is public', async t => {
@@ -154,8 +161,7 @@ test('two approved OAuth clients route tools only to their own browser, includin
   assert.equal(frame.content[1].type, 'image');
   assert.equal(frame.content[1].mimeType, 'image/jpeg');
   assert.equal(JSON.parse((await call(a, 'get_connection')).content[0].text).bridgeId, alice.ready.bridgeId);
-  const repeat = await f.begin(alice.ready.code);
-  assert.equal(repeat.pair.status, 400);
+  assert.equal(await f.rejected(alice.flow.flow), 1008);
   alice.socket.send(JSON.stringify({ type: 'revoke' }));
   await alice.next('revoked');
   assert.equal((await f.request('/mcp', { headers: { Authorization: `Bearer ${aliceToken.access_token}` } })).status, 401);
@@ -168,7 +174,7 @@ test('authorization codes bind client, redirect, PKCE and resource; tokens rotat
   assert.equal((await f.exchange(flow, flow.code, { code_verifier: 'bad-verifier' })).status, 400);
   assert.equal((await f.exchange(flow, flow.code, { redirect_uri: 'http://localhost:43210/wrong' })).status, 400);
   assert.equal((await f.exchange(flow, flow.code, { resource: 'https://other.example/mcp' })).status, 400);
-  const outsider = await f.begin('incorrect-code');
+  const outsider = await f.begin();
   assert.equal((await f.exchange(flow, flow.code, { client_id: outsider.client.client_id })).status, 400);
   const tokens = await (await f.exchange(flow, flow.code)).json();
   assert.equal(typeof tokens.access_token, 'string');
@@ -184,27 +190,25 @@ test('authorization codes bind client, redirect, PKCE and resource; tokens rotat
   assert.equal((await f.request('/mcp', { headers: { Authorization: `Bearer ${rotated.access_token}` } })).status, 401);
 });
 
-test('knowing a pairing code cannot bypass approval or approve another browser', async t => {
+test('a one-time connection link cannot bypass approval or be claimed twice', async t => {
   const f = await fixture(t), owner = await f.browser(), outsider = await f.browser();
-  const flow = await f.begin(owner.ready.code), pending = await owner.next('pair_request');
+  const flow = owner.flow, pending = await owner.next('pair_request');
   outsider.socket.send(JSON.stringify({ type: 'decision', requestId: pending.requestId, approved: true }));
   assert.deepEqual(await (await f.request(`/connect/status?flow=${flow.flow}`)).json(), { pending: true });
-  const second = await f.begin(owner.ready.code);
-  assert.equal(second.pair.status, 400);
+  assert.equal(await f.rejected(flow.flow), 1008);
   owner.socket.send(JSON.stringify({ type: 'decision', requestId: pending.requestId, approved: false }));
-  // A ping confirms the preceding decision was processed on the same socket.
-  owner.socket.send(JSON.stringify({ type: 'ping' })); await owner.next('pong');
+  await owner.next('revoked');
   const denied = await (await f.request(`/connect/status?flow=${flow.flow}`)).json();
   assert.equal(new URL(denied.redirect).searchParams.get('error'), 'access_denied');
-  assert.equal(f.relay.sessions.get(owner.ready.bridgeId).approved, false);
+  assert.equal(f.relay.sessions.get(owner.ready.bridgeId), undefined);
 });
 
-test('expired pairing, grant and disconnected sessions cannot be used', async t => {
+test('expired links, grants and disconnected sessions cannot be used', async t => {
   let now = Date.now();
-  const f = await fixture(t, { sessionOptions: { now: () => now, pairingMs: 100, lifetimeMs: 1000, reconnectMs: 50 }, authOptions: { now: () => now } });
-  const expired = await f.browser();
-  now += 101;
-  assert.equal((await f.begin(expired.ready.code)).pair.status, 400);
+  const f = await fixture(t, { sessionOptions: { now: () => now, lifetimeMs: 1000, reconnectMs: 50 }, authOptions: { now: () => now } });
+  const expired = await f.begin();
+  now += 5 * 60_000 + 1;
+  assert.equal(await f.rejected(expired.flow), 1008);
   const owner = await f.browser(), tokens = await f.token(owner);
   now += 1001;
   assert.equal((await f.request('/mcp', { headers: { Authorization: `Bearer ${tokens.access_token}` } })).status, 401);

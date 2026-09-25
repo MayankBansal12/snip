@@ -4,24 +4,24 @@ The TypeScript engine validates edit state and applies atomic commands. React pr
 
 ## Agent onboarding and JSON
 
-In the landing page or editor header, hover or tap **use snip with your agent** to copy a setup prompt. Deployments with `VITE_SNIP_MCP_ORIGIN` configured offer the hosted connection first, with **use local setup instead** as a fallback. Without a hosted origin, local setup remains the default. Editing commands use JSON internally; the editor does not expose a JSON editing panel.
+In the landing page or editor header, hover or tap **use snip with your agent** to copy a setup prompt. Deployments with `VITE_SNIP_MCP_ORIGIN` configured provide one browser-first prompt; it tells the agent to request confirmation before using the local fallback. Without a hosted origin, local setup remains the default. Editing commands use JSON internally; the editor does not expose a JSON editing panel.
 
 The envelope is `{ version: 1, renderer: "ffmpeg-wasm-0.12.10-single-v1", source, edits }`. `source` contains the source SHA-256, byte size, width, height, and decoded duration; all must match the open video. `edits` is the complete version-2 `Edits` structure in `src/types.ts`, with explicit per-clip speed and zoom. Use `get_project` to inspect the specification. Unknown fields, invalid ranges, mismatched sources, and unsupported versions are rejected. JSON is limited to 8 MiB and excludes video bytes; `.snip` files still include the source and remain compatible.
 
 ## Connect through the hosted relay
 
-1. Open Snip, choose a video, and click **use snip with your agent → copy prompt**.
-2. Paste the prompt into an agent that supports remote MCP. Add the supplied HTTPS `/mcp` URL in the client's MCP settings if needed. Some clients cannot add a server from a prompt and require this one-time setup themselves.
-3. When the client's OAuth authorization page opens in your browser, enter the pairing code shown in Snip. Return to the original editor tab, check the verification code matches, and choose **connect agent**. Client names are self-reported; approve only a request you initiated.
+1. Open Snip and click **use snip with your agent → copy prompt**. You may select a video before or after connecting the agent.
+2. Paste the prompt into an agent that supports remote MCP. Copying and expanding the prompt are local UI actions and do not create a relay session. Add the supplied HTTPS `/mcp` URL in the client's MCP settings if needed. Some clients cannot add a server from a prompt and require this one-time setup themselves.
+3. The agent sends you its one-time Snip authorization URL. Open it, choose **Open Snip to connect**, check that the verification code matches the request shown in Snip, and choose **connect agent**. Client names are self-reported; approve only a request you initiated.
 4. Ask for edits. The agent calls the same tools described below; the browser validates changes and updates the preview. Review before asking for an export.
 
-The copied prompt contains a temporary pairing code, not an access token. A code alone cannot read or edit the project: the browser must approve the connection. Pairing codes expire after ten minutes; authorization pages after five minutes. Access tokens last up to one hour and rotate through refresh tokens, bounded by a four-hour browser session. Codes are single-use after approval. No Snip account is required.
+The copied prompt is static and contains no token or session identifier. One-time authorization links expire after five minutes and cannot read or edit a project without browser approval. Access tokens last up to one hour and rotate through refresh tokens, bounded by a four-hour browser session. Authorization links are single-use. No Snip account is required.
 
 The relay runs MCP Streamable HTTP with OAuth discovery, dynamic client registration, and S256 PKCE. A client must support that combination; stdio-only clients should use the local fallback. The integration tests exercise the official TypeScript MCP client, including its automatic discovery/authorization flow. Client-specific setup UI can vary.
 
 The agent talks to the relay over HTTPS; the open editor connects outward using a secure WebSocket. Project metadata, edit commands, status, and requested JPEG frames pass through the relay. Full source videos and exported files stay in the browser. The relay can see the metadata and frames in transit, but does not persist them or include them in application logs. It cannot edit or render when the tab is closed or suspended.
 
-The browser retries brief connection losses with exponential backoff. A disconnected session has a 60-second grace period, and commands fail while offline; edits are never queued for replay. Keep the tab open. **disconnect agent**, replacing the source/project, or clearing the project revokes the grant. Refreshing the tab, expiration, or a relay restart requires a new pairing. An agent's existing credentials do not authorize a different tab or project.
+The browser retries brief connection losses with exponential backoff. A disconnected session has a 60-second grace period, and commands fail while offline; edits are never queued for replay. Keep the tab open. **disconnect agent**, replacing the source/project, or clearing the project revokes the grant. Refreshing the tab, expiration, or a relay restart requires a new authorization link. An agent's existing credentials do not authorize a different tab or project.
 
 ### Deploy the relay with Docker on a VM
 
@@ -54,7 +54,7 @@ Place its connector token in `.secrets/cloudflare-tunnel-token` on the VM. Keep 
 
 Add a **proxied CNAME** named `snip-mcp` to `<tunnel-id>.cfargotunnel.com` in the same Cloudflare account. The standard setup requires the domain's DNS to be active on Cloudflare; a CNAME at an unrelated DNS provider is insufficient. Preserve existing DNS records before moving nameservers. A temporary quick-tunnel URL is unsuitable for the canonical production endpoint.
 
-Once public HTTPS works, set **`VITE_SNIP_MCP_ORIGIN=https://snip-mcp.mayank.fyi`** in Vercel's website build environment and redeploy the branch containing the hosted feature. Do not append `/mcp` to this variable. The agent endpoint is `https://snip-mcp.mayank.fyi/mcp`. Check public `/healthz`, OAuth discovery, unauthenticated `/mcp` returning 401, and browser pairing/edit/export before rollout.
+Once public HTTPS works, set **`VITE_SNIP_MCP_ORIGIN=https://snip-mcp.mayank.fyi`** in Vercel's website build environment and redeploy the branch containing the hosted feature. Do not append `/mcp` to this variable. The agent endpoint is `https://snip-mcp.mayank.fyi/mcp`. Check public `/healthz`, OAuth discovery, unauthenticated `/mcp` returning 401, and the browser connection/edit/export flow before rollout.
 
 For updates, deploy a reviewed commit and repeat the build/start command. Logs are available with `docker compose -f compose.mcp.yaml logs --tail=100 snip-mcp`; restart with `docker compose -f compose.mcp.yaml restart snip-mcp`. Keep a prior image tag for rollback using `SNIP_IMAGE_TAG=<prior-tag> docker compose -f compose.mcp.yaml up -d --no-build --wait`. Restarts and rollbacks require clients to pair again and may require removing/re-adding the MCP connection to reset its OAuth registration. The relay needs no persistent volume or database.
 
@@ -67,9 +67,9 @@ Use one always-on Node web service. [`render.yaml`](../render.yaml) supplies the
 3. Render supplies `PORT` and `RENDER_EXTERNAL_URL`. The service uses that URL as its canonical HTTPS origin unless `SNIP_RELAY_ORIGIN` is set. The MCP endpoint is **`https://<your-service>.onrender.com/mcp`**.
 4. In the website's build environment, set **`VITE_SNIP_MCP_ORIGIN=https://<your-service>.onrender.com`**, without `/mcp`, then rebuild/redeploy the website. The editor can stay on its existing host.
 5. For a custom domain such as `snip-mcp.mayank.fyi`, configure its DNS/TLS in Render, set `SNIP_RELAY_ORIGIN=https://snip-mcp.mayank.fyi` on the relay, and update `VITE_SNIP_MCP_ORIGIN` on the website. Requests must use that canonical Host. If a browser-based MCP client sends an Origin header, add its exact origin to `SNIP_CLIENT_ORIGINS`; this does not authorize it as an editor browser.
-6. Check `/healthz`, confirm unauthenticated `/mcp` returns 401 with OAuth metadata, and run the pairing/edit/export flow using your actual agent client.
+6. Check `/healthz`, confirm unauthenticated `/mcp` returns 401 with OAuth metadata, and run the connection/edit/export flow using your actual agent client.
 
-There is no database dependency in this version. Connection routing, OAuth registrations, and grants live in process memory. **Run exactly one Node process/instance; do not enable autoscaling or cluster workers.** A restart invalidates pairings and OAuth registrations. Reconnect/re-register the client after a restart; clients that retain invalid registration credentials may need their Snip connection removed and re-added. Multiple instances would require shared authorization state and routing/pub-sub to the process holding each browser socket.
+There is no database dependency in this version. Connection routing, OAuth registrations, and grants live in process memory. **Run exactly one Node process/instance; do not enable autoscaling or cluster workers.** A restart invalidates active connections and OAuth registrations. Reconnect/re-register the client after a restart; clients that retain invalid registration credentials may need their Snip connection removed and re-added. Multiple instances would require shared authorization state and routing/pub-sub to the process holding each browser socket.
 
 The relay binds to `0.0.0.0` for managed hosting and expects the platform to terminate HTTPS. Keep its internal HTTP port behind that proxy. Outside Render, set `SNIP_RELAY_ORIGIN` explicitly; HTTP origins are accepted only for loopback development. Leave `SNIP_TRUST_PROXY=0` unless the service is behind a known proxy that supplies the client address, and set it to that proxy's hop count. The server ignores forwarded Host/Origin for trust decisions. Pairing, OAuth, and MCP requests have size/rate/capacity limits. Configure proxy access logs to omit credentials and query strings as well.
 
