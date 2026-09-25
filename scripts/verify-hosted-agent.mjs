@@ -61,6 +61,7 @@ try {
   const expandedPrompt = await page.getByLabel('full agent prompt').inputValue();
   assert.equal(expandedPrompt, collapsedPrompt);
   assert.equal(await page.getByLabel('full agent prompt').evaluate(element => getComputedStyle(element).textTransform), 'lowercase');
+  assert.equal(await page.getByLabel('full agent prompt').evaluate(element => getComputedStyle(element).overflowY), 'auto');
   assert.match(expandedPrompt, /send it to me/);
   await button('copy prompt').click();
   await button('copied').waitFor();

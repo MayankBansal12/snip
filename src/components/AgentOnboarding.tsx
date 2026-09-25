@@ -52,7 +52,7 @@ export default function AgentOnboarding({ hostedPrompt = '', connected = false }
       <div className="mt-4">
         <div className="min-w-0 rounded-xl bg-muted/60 p-4 sm:p-5">
           <div id={contentId}>
-            <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className={`block w-full resize-none overflow-hidden rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground lowercase outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring ${expanded ? 'h-[min(22rem,40svh)]' : 'h-12'}`} />
+            <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className={`block w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground lowercase outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring ${expanded ? 'h-[min(22rem,40svh)] overflow-y-auto' : 'h-12 overflow-hidden'}`} />
           </div>
           <div className="mt-5 flex items-center justify-between gap-3">
             <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
