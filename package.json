@@ -12,6 +12,9 @@
     "test:engine": "tsx --test tests/engine.test.ts",
     "test:agent": "node scripts/verify-agent.mjs",
     "mcp": "node scripts/mcp-server.mjs",
+    "mcp:hosted": "node scripts/hosted-server.mjs",
+    "test:hosted": "node --test tests/hosted-mcp.test.mjs",
+    "test:agent:hosted": "node scripts/verify-hosted-agent.mjs",
     "test:bridge": "node --test tests/bridge.test.mjs",
     "test:chat": "tsx --test tests/chat.test.ts",
     "check:server": "tsc -p tsconfig.server.json"
@@ -27,6 +30,8 @@
     "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
     "lucide-react": "^0.468.0",
     "mediabunny": "^1.58.1",
     "react": "^19.0.0",

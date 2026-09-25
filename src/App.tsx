@@ -4,6 +4,8 @@ import { identifySource } from './engine/source';
 import { captureSourceFrame } from './agent-frame';
 import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
+import { connectHostedAgent, hostedAgentPrompt, hostedMcpOrigin } from './hosted-agent';
+import type { HostedPairing, PairingRequest } from './hosted-agent';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
 import { requestChatEdit } from './chat';
@@ -52,6 +54,10 @@ export default function App(){
   const [agentBridge,setAgentBridge]=useState('');
   const capturingFrame=useRef(false);
   const disconnectAgent=useRef<(()=>void)|null>(null),agentHandler=useRef<AgentHandler>(async()=>{throw new Error('Editor is loading.');});
+  const hostedAgent=useRef<ReturnType<typeof connectHostedAgent>|null>(null);
+  const [hostedPairing,setHostedPairing]=useState<HostedPairing|null>(null);
+  const [hostedPrompt,setHostedPrompt]=useState('');
+  const [agentRequest,setAgentRequest]=useState<PairingRequest|null>(null);
   const session=useRef(new EditSession(uid())),exportLock=useRef(false),pointerActive=useRef(false);
   const exportJob=useRef<{id:string;sessionId:string;revision:number;status:string;progress:number;name?:string;size?:number;error?:string}|null>(null);
   const exportRequests=useRef(new Set<string>());
@@ -73,6 +79,26 @@ export default function App(){
   const pausePlayback=useCallback(()=>{playback.current?.pause();videoRef.current?.pause();},[]);
   const history=useRef<{past:Edits[];future:Edits[]}>({past:[],future:[]});const [,refreshHistory]=useState(0);
   const duration=sequenceDuration(edits);
+  const endAgent=()=>{
+    disconnectAgent.current?.();disconnectAgent.current=null;hostedAgent.current=null;
+    setAgentStatus('');setAgentBridge('');setHostedPairing(null);setHostedPrompt('');setAgentRequest(null);
+  };
+  const prepareHosted=async()=>{
+    if(!source||!ready||loadLock.current)throw new Error('Open a video in Snip first, then copy the agent prompt.');
+    if(hostedAgent.current&&hostedPairing&&hostedPairing.pairingExpiresAt>Date.now())return hostedAgentPrompt(hostedPairing);
+    endAgent();
+    const connection=connectHostedAgent((method,params)=>agentHandler.current(method,params),value=>{
+      setAgentStatus(value);
+      if(value==='agent connected'||value.startsWith('agent disconnected')){setHostedPairing(null);setHostedPrompt('');}
+    },setAgentBridge,setAgentRequest);
+    hostedAgent.current=connection;disconnectAgent.current=connection.disconnect;
+    const pairing=await connection.ready;
+    const prompt=hostedAgentPrompt(pairing);setHostedPairing(pairing);setHostedPrompt(prompt);return prompt;
+  };
+  const decideAgent=(allow:boolean)=>{
+    if(!agentRequest)return;
+    try{hostedAgent.current?.decide(agentRequest.requestId,allow);}catch(error){setError(error instanceof Error?error.message:'Connection failed.');}
+  };
 
   useEffect(()=>{let active=true;restoreProject().then(project=>{if(active&&project){const next=migrateEdits(project.edits,project.source.duration);setSource(project.source);setEdits(next);editsRef.current=next;setSelectedClip(next.clips[0].id);}}).catch(()=>{if(active)setSaved('local saving is unavailable');}).finally(()=>{if(active)setReady(true);});return()=>{active=false;};},[]);
   useEffect(()=>{if(!source){setUrl('');return;}const next=URL.createObjectURL(source.file);setUrl(next);return()=>URL.revokeObjectURL(next);},[source?.file]);
@@ -210,6 +236,7 @@ export default function App(){
       const nextProject=isProject?await readProjectFile(file):await readMetadata(file).then(source=>({source,edits:defaults(source.duration)}));
       const {source:next,edits:nextEdits}=nextProject;
       await saveProject(next,nextEdits);
+      if(hostedAgent.current)endAgent();
       session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
       if(isProject)setNotice('project opened');
     }catch(err){setError(err instanceof Error?err.message:'couldn’t open or save this file. your browser’s storage may be full.');}
@@ -226,7 +253,7 @@ export default function App(){
     catch(err){if(!cancelled.current){const message=err instanceof Error?err.message:'export failed. try a smaller resolution.';Object.assign(job,{status:'failed',error:message});setError(message);}}finally{exportLock.current=false;setBusy(false);}
   }
   const stopExport=()=>{cancelled.current=true;if(exportJob.current)exportJob.current.status='cancelled';cancelExport();setProgress(0);};
-  const removeProject=async()=>{try{await clearProject();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
+  const removeProject=async()=>{try{await clearProject();if(hostedAgent.current)endAgent();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
   const ensureEditable=()=>{
     if(!source||!ready)throw new Error('Open a video in the editor first.');
     if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
@@ -235,7 +262,7 @@ export default function App(){
   applyBatchRef.current=(params)=>{
     const currentSource=ensureEditable();
     if(pointerActive.current)throw new Error('Finish the current pointer interaction before applying edits.');
-    if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu||agentToken)throw new Error('Close the open dialog, then try the edit again.');
+    if(showExport||actionsOpen||showShortcuts||confirmClear||showMenu||agentToken||agentRequest)throw new Error('Close the open dialog, then try the edit again.');
     const result=session.current.apply(params,editsRef.current,currentSource.duration);
     if(!result.duplicate){pausePlayback();checkpoint();apply(result.edits,false);}
     return result;
@@ -302,7 +329,7 @@ export default function App(){
         if(exportJob.current?.id===request.requestId)return {...exportJob.current};
         throw new Error('This export request was already handled.');
       }
-      if(actionsOpen||confirmClear||showShortcuts||showMenu)throw new Error('Close the editor dialog or clip controls before exporting.');
+      if(actionsOpen||confirmClear||showShortcuts||showMenu||agentRequest)throw new Error('Close the editor dialog or clip controls before exporting.');
       if(exportRequests.current.size>=10000)throw new Error('Export request limit reached. Reopen the project.');
       exportRequests.current.add(request.requestId);
       exportJob.current={id:request.requestId,sessionId:session.current.sessionId,revision:session.current.revision,status:'running',progress:0};
@@ -314,10 +341,11 @@ export default function App(){
   const brand = <div className="flex shrink-0 items-center gap-2 sm:gap-2.5"><ScissorsMark className="size-5 text-primary sm:size-6" /><span className="text-xl font-bold tracking-tight sm:text-2xl">snip<span className="text-primary">.</span></span></div>;
   const errorAlert = error && !showExport && <Alert variant="error" className="mt-4"><AlertDescription className="flex items-center justify-between gap-3">{error}<Button variant="ghost" size="icon-sm" aria-label="dismiss error" onClick={() => setError('')}><X /></Button></AlertDescription></Alert>;
   const agentControl=agentStatus && <div className="flex items-center gap-2">
-    {agentStatus==='agent connected' ? <Button variant="ghost" size="sm" title={`Connected to ${location.host} · bridge ${agentBridge}`} onClick={()=>{disconnectAgent.current?.();disconnectAgent.current=null;setAgentStatus('');setAgentBridge('');}}>disconnect agent</Button>
-      : <span role="status" title="Open the pairing link from your current agent to reconnect." className="text-xs text-muted-foreground">{agentStatus}</span>}
+    {agentStatus!=='agent connected' && <span role="status" className="text-xs text-muted-foreground">{agentStatus}</span>}
+    {(agentStatus==='agent connected'||hostedAgent.current) && <Button variant="ghost" size="sm" title={`Connected to ${hostedAgent.current?hostedMcpOrigin:location.host} · bridge ${agentBridge}`} onClick={endAgent}>disconnect agent</Button>}
   </div>;
-  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !agentToken && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
+  const agentOnboarding=<AgentOnboarding prepareHosted={hostedMcpOrigin?prepareHosted:undefined} hostedPrompt={hostedPrompt} pairingCode={hostedPairing?.code} connected={!!hostedAgent.current&&agentStatus==='agent connected'} />;
+  return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !agentToken && !agentRequest && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
 
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
     <input ref={projectInputRef} type="file" id="project-file" accept=".snip" hidden onChange={e => void openFile(e.target.files?.[0],true)} />
@@ -326,14 +354,14 @@ export default function App(){
       {brand}
       <div className="header-actions ml-auto flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
         <span className="sr-only" role="status">{loading ? 'opening…' : saved}</span>
-        {agentControl}<AgentOnboarding />
+        {agentControl}{agentOnboarding}
         <span className="hidden sm:contents">{themeButton}</span>
         <ProjectMenu filename={source.name} onRename={renameProject} disabled={busy || loading} theme={theme} onOpenChange={open => { setShowMenu(open); if (open) pausePlayback(); }} onOpen={() => inputRef.current?.click()} onOpenProject={() => projectInputRef.current?.click()} onSaveProject={downloadProject} onTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onHelp={() => setShowShortcuts(true)} onClear={() => setConfirmClear(true)} />
         <Button aria-label="export video" aria-keyshortcuts="Control+E Meta+E" disabled={busy || loading} onClick={openExport}><ArrowDownToLine className="hidden sm:block" />export</Button>
       </div>
     </header>}
     {!source ? <main className="start-screen flex min-h-svh flex-col">
-      <div className="absolute right-5 top-5 left-5 flex flex-wrap items-center justify-end gap-1 sm:right-8 sm:top-7">{agentControl}<AgentOnboarding />{themeButton}</div>
+      <div className="absolute right-5 top-5 left-5 flex flex-wrap items-center justify-end gap-1 sm:right-8 sm:top-7">{agentControl}{agentOnboarding}{themeButton}</div>
       <div className="flex flex-1 items-center justify-center px-6 pb-16 pt-24 sm:pb-36">
         <div className="w-full max-w-[34.25rem] text-center">
           <div className="flex items-end justify-center gap-3"><ScissorsMark className="size-14 shrink-0 text-primary sm:size-16" /><h1 className="text-7xl font-[750] leading-none tracking-[-0.075em] sm:text-[88px]">snip<span className="text-primary">.</span></h1></div>
@@ -374,7 +402,8 @@ export default function App(){
       {notice && <Alert className="mt-4"><AlertDescription className="flex flex-wrap items-center gap-2">{notice}{projectDownload && <Button size="sm" variant="link" render={<a href={projectDownload.url} download={projectDownload.name} />}>download again</Button>}</AlertDescription></Alert>}
       {errorAlert}
     </main>}
-    <AlertDialog open={!!agentToken} onOpenChange={open=>{if(!open)setAgentToken(null);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription>The agent can read edit settings, request screenshots of video frames, change the open project, and start a browser export. Requested frames are shared with the agent; the full video stays in this browser. Choose a video here after connecting.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>cancel</AlertDialogClose><Button onClick={()=>{try{disconnectAgent.current?.();disconnectAgent.current=connectAgent(agentToken!, (method,params)=>agentHandler.current(method,params),setAgentStatus,setAgentBridge);setAgentToken(null);}catch(e){setError(e instanceof Error?e.message:'Connection failed.');setAgentToken(null);}}}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
+    <AlertDialog open={!!agentRequest} onOpenChange={open=>{if(!open)decideAgent(false);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription><strong>{agentRequest?.clientName}</strong> is requesting access to this project. Check that the authorization page shows <code>{agentRequest?.verification}</code>. Only approve a request you started; the client name is self-reported. The agent can read settings, request frame screenshots, change edits, and start an export. The full video stays in this browser.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" onClick={()=>decideAgent(false)}>deny</Button><Button onClick={()=>decideAgent(true)}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
+    <AlertDialog open={!!agentToken} onOpenChange={open=>{if(!open)setAgentToken(null);}}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>connect your agent?</AlertDialogTitle><AlertDialogDescription>The agent can read edit settings, request screenshots of video frames, change the open project, and start a browser export. Requested frames are shared with the agent; the full video stays in this browser. Choose a video here after connecting.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>cancel</AlertDialogClose><Button onClick={()=>{try{endAgent();disconnectAgent.current=connectAgent(agentToken!, (method,params)=>agentHandler.current(method,params),setAgentStatus,setAgentBridge);setAgentToken(null);}catch(e){setError(e instanceof Error?e.message:'Connection failed.');setAgentToken(null);}}}>connect agent</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
     <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     <ExportDialog open={showExport} source={source} edits={edits} busy={busy} progress={progress} stage={stage} download={download} error={error} onUpdate={update} onClose={() => setShowExport(false)} onExport={() => void startExport()} onCancel={stopExport} />
     <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}><AlertDialogPopup><AlertDialogHeader><AlertDialogTitle>clear this video?</AlertDialogTitle><AlertDialogDescription>this removes the video and edits saved in this browser. your original file stays yours.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>keep editing</AlertDialogClose><Button variant="destructive" onClick={() => void removeProject()}>clear video</Button></AlertDialogFooter></AlertDialogPopup></AlertDialog>
