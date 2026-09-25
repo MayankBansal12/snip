@@ -36,6 +36,9 @@ services:
       snip-mcp:
         condition: service_healthy
     secrets: [cloudflare_tunnel_token]
+    networks:
+      - default
+      - mailglass-tunnel
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -51,3 +54,8 @@ services:
 secrets:
   cloudflare_tunnel_token:
     file: ./.secrets/cloudflare-tunnel-token
+
+networks:
+  mailglass-tunnel:
+    external: true
+    name: mailglass-tunnel
