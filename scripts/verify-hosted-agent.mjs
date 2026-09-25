@@ -56,8 +56,11 @@ try {
   await page.goto(appOrigin);
   await button('use snip with your agent').click();
   assert.equal(await button('use local setup instead').count(), 0);
+  const collapsedPrompt = await page.getByLabel('full agent prompt').inputValue();
   await button('view more').click();
   const expandedPrompt = await page.getByLabel('full agent prompt').inputValue();
+  assert.equal(expandedPrompt, collapsedPrompt);
+  assert.equal(await page.getByLabel('full agent prompt').evaluate(element => getComputedStyle(element).textTransform), 'lowercase');
   assert.match(expandedPrompt, /send it to me/);
   await button('copy prompt').click();
   await button('copied').waitFor();

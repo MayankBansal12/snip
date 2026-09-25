@@ -52,8 +52,7 @@ export default function AgentOnboarding({ hostedPrompt = '', connected = false }
       <div className="mt-4">
         <div className="min-w-0 rounded-xl bg-muted/60 p-4 sm:p-5">
           <div id={contentId}>
-            {expanded && displayedPrompt ? <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className="block h-[min(22rem,40svh)] w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" />
-              : <p className="select-text break-words text-sm leading-relaxed">{hosted ? 'Help me edit a video in my Snip browser tab. Connect to Snip, ask what edits I want, and let me preview before exporting.' : introduction}</p>}
+            <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className={`block w-full resize-none overflow-hidden rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground lowercase outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring ${expanded ? 'h-[min(22rem,40svh)]' : 'h-12'}`} />
           </div>
           <div className="mt-5 flex items-center justify-between gap-3">
             <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
