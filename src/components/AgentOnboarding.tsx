@@ -3,12 +3,11 @@ import { Check, ChevronDown, Copy } from 'lucide-react';
 import { Button } from './ui/button';
 import { Popover, PopoverDescription, PopoverPopup, PopoverTitle, PopoverTrigger } from './ui/popover';
 
-const repository = 'https://github.com/MayankBansal12/snip';
 const introduction = 'Hey, help me edit a video with Snip. Connect its local MCP server, ask what edits I want, and let me preview before exporting.';
 const config = JSON.stringify({ mcpServers: { snip: { command: 'node', args: ['/absolute/path/to/snip/scripts/mcp-server.mjs'], env: { SNIP_PORT: '5188' } } } }, null, 2);
-const prompt = `${introduction}
+const localPrompt = `${introduction}
 
-Set up Snip from ${repository} using docs/editing-engine.md. Clone the main branch into a new directory:
+Set up Snip from https://github.com/MayankBansal12/snip using docs/editing-engine.md. Clone the main branch into a new directory:
 
 git clone --branch main --single-branch https://github.com/MayankBansal12/snip.git snip-agent
 cd snip-agent
@@ -21,34 +20,26 @@ ${config}
 
 First check where you are running. If you are on my computer, use the local connection. If you are on a VM or remote machine, do not try to open a desktop or agent-browser for me: expose port 5188 through an authenticated HTTPS tunnel (in bb, use bb connect expose 5188), set SNIP_PUBLIC_URL in the MCP server environment to that exact HTTPS origin, and restart the MCP server. Alternatively, forward its loopback port to my computer over SSH. Call get_connection and give me the pairing link to open in my own browser, where I will connect and choose my video. The VM needs only Node.js; preview and export run in my browser. Use the same MCP process throughout the session. If a tab appears connected but your bridge reports otherwise, compare its bridge ID (shown on hover over disconnect agent) with get_connection, and provide the pairing link from your current bridge. Read get_project before editing, use the returned session and revision, and ask what changes I want. Use get_frame with a sourceTime in original-video seconds to inspect the footage before choosing zoom positions or visual edits. Requested frame images are shared with you; the full video remains in the browser. Let me preview the edits before starting an export. Keep the video in my browser.`;
 
-type Props = { prepareHosted?: () => Promise<string>; hostedPrompt?: string; pairingCode?: string; connected?: boolean };
-export default function AgentOnboarding({ prepareHosted, hostedPrompt = '', pairingCode, connected = false }: Props) {
+type Props = { hostedPrompt?: string; connected?: boolean };
+export default function AgentOnboarding({ hostedPrompt = '', connected = false }: Props) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState('');
-  const [local, setLocal] = useState(false);
-  const [preparing, setPreparing] = useState(false);
-  const hosted = !!prepareHosted && !local;
-  const displayedPrompt = hosted ? hostedPrompt : prompt;
+  const hosted = !!hostedPrompt;
+  const displayedPrompt = hosted ? hostedPrompt : localPrompt;
   const contentId = useId();
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   async function copy() {
-    setPreparing(true); setError('');
-    let next = displayedPrompt;
+    setError('');
     try {
-      if (hosted) next = await prepareHosted!();
-    } catch (error) {
-      setPreparing(false); setError(error instanceof Error ? error.message : 'Could not connect to Snip. Try again or use local setup.'); return;
-    }
-    try {
-      await navigator.clipboard.writeText(next);
+      await navigator.clipboard.writeText(displayedPrompt);
       setCopied(true); clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       setExpanded(true);
       setError('Clipboard access is unavailable. Select and copy the full prompt above.');
-    } finally { setPreparing(false); }
+    }
   }
   return <Popover>
     <PopoverTrigger openOnHover delay={150} closeDelay={250} render={<Button variant="ghost" size="sm" className="group text-sm font-normal text-muted-foreground" />}>
@@ -57,23 +48,22 @@ export default function AgentOnboarding({ prepareHosted, hostedPrompt = '', pair
     <PopoverPopup align="end" sideOffset={12} className="w-[min(32rem,calc(100vw-2rem))] rounded-2xl shadow-xl/5 motion-reduce:transition-none">
       <PopoverTitle className="sr-only">use snip with your agent</PopoverTitle>
       <PopoverDescription>copy below prompt and pass it to your agent to get started.</PopoverDescription>
-      {hosted && pairingCode && <p className="mt-3 text-sm">pairing code: <code className="break-all select-all">{pairingCode}</code><span className="mt-1 block text-muted-foreground">enter this code when your agent opens Snip authorization, then approve in this tab.</span></p>}
-      {hosted && connected && <p className="mt-3 text-sm text-muted-foreground">your agent is connected. Ask it what you want to change. Disconnect before pairing another agent.</p>}
-      <div className="mt-4 rounded-xl bg-muted/60 p-4 sm:p-5">
-        <div id={contentId}>
-          {expanded && displayedPrompt ? <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className="block h-[min(22rem,40svh)] w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" />
-            : <p className="select-text break-words text-sm leading-relaxed">{hosted ? 'Help me edit the video open in my Snip browser tab. Connect to Snip, ask what edits I want, and let me preview before exporting.' : introduction}</p>}
-        </div>
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
-            {expanded ? 'view less' : 'view more'}<ChevronDown className={`size-3.5 ${expanded ? 'rotate-180' : ''}`} />
-          </Button>
-          <Button size="sm" disabled={preparing || (hosted && connected)} onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{preparing ? 'connecting…' : copied ? 'copied' : 'copy prompt'}</Button>
+      {hosted && connected && <p className="mt-3 text-sm text-muted-foreground">your agent is connected. Ask it what you want to change. Disconnect before connecting another agent.</p>}
+      <div className="mt-4">
+        <div className="min-w-0 rounded-xl bg-muted/60 p-4 sm:p-5">
+          <div id={contentId}>
+            <textarea aria-label="full agent prompt" readOnly value={displayedPrompt} spellCheck={false} className={`block w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground lowercase outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring ${expanded ? 'h-[min(22rem,40svh)] overflow-y-auto' : 'h-12 overflow-hidden'}`} />
+          </div>
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
+              {expanded ? 'view less' : 'view more'}<ChevronDown className={`size-3.5 ${expanded ? 'rotate-180' : ''}`} />
+            </Button>
+            <Button size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? 'copied' : 'copy prompt'}</Button>
+          </div>
         </div>
       </div>
       <span className="sr-only" role="status">{copied ? 'Prompt copied' : ''}</span>
       {error && <p role="alert" className="mt-2 text-sm text-destructive-foreground">{error}</p>}
-      {prepareHosted && <Button size="sm" variant="ghost" className="mt-2 text-xs text-muted-foreground" onClick={() => { setLocal(value => !value); setExpanded(false); setError(''); setCopied(false); }}>{local ? 'use browser connection' : 'use local setup instead'}</Button>}
     </PopoverPopup>
   </Popover>;
 }

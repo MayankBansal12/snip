@@ -20,7 +20,7 @@ export function createHostedServer({ publicOrigin, appOrigins, clientOrigins = [
   if (allowedOrigins.has(null)) throw new Error('Allowed origins must not be empty.');
   if (!Number.isInteger(trustProxy) || trustProxy < 0 || trustProxy > 5) throw new Error('SNIP_TRUST_PROXY must be a trusted proxy hop count (0–5).');
   const sessions = new BrowserSessions(sessionOptions);
-  const auth = new HostedAuth(sessions, publicOrigin, authOptions);
+  const auth = new HostedAuth(sessions, publicOrigin, [...browserOrigins][0], authOptions);
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', trustProxy);
@@ -64,7 +64,7 @@ export function createHostedServer({ publicOrigin, appOrigins, clientOrigins = [
   app.all('/mcp', (_req, res) => res.status(405).set('Allow', 'POST').json({ error: 'Use MCP Streamable HTTP POST requests.' }));
   app.use((_req, res) => res.sendStatus(404));
   app.use((error, _req, res, _next) => {
-    // Never log payloads, pairing codes, authorization headers, or frame data.
+    // Never log payloads, connection links, authorization headers, or frame data.
     if (!res.headersSent) res.status(error.status === 413 ? 413 : 400).json({ error: 'Invalid request.' });
   });
   const http = createServer(app);
@@ -85,14 +85,19 @@ export function createHostedServer({ publicOrigin, appOrigins, clientOrigins = [
       client.once('close', () => clearTimeout(timeout));
       client.once('message', data => {
         clearTimeout(timeout);
+        let session;
         try {
           if (data.length > 1024) throw new Error('Invalid handshake.');
           const hello = JSON.parse(data.toString());
-          if (hello?.type !== 'hello' || (hello.resumeToken !== undefined && (typeof hello.resumeToken !== 'string' || hello.resumeToken.length !== 43)))
+          if (hello?.type !== 'hello' || (hello.resumeToken !== undefined && (typeof hello.resumeToken !== 'string' || hello.resumeToken.length !== 43))
+            || (hello.flowId !== undefined && (typeof hello.flowId !== 'string' || hello.flowId.length !== 43))
+            || Boolean(hello.resumeToken) === Boolean(hello.flowId))
             throw new Error('Invalid handshake.');
-          sessions.attach(client, req.headers.origin, hello.resumeToken);
+          session = sessions.attach(client, req.headers.origin, hello.resumeToken);
+          if (hello.flowId) auth.attachFlow(session, hello.flowId);
         } catch {
-          client.close(1008, 'Session unavailable. Copy a new prompt in Snip.');
+          if (session && !session.approved) sessions.revoke(session, 1008, 'Connection link expired or already used.');
+          else client.close(1008, 'Connection link expired or already used.');
         }
       });
     });

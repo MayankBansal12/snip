@@ -3,10 +3,9 @@ import type { AgentHandler } from './agent-connection';
 
 export const hostedMcpOrigin = (import.meta.env.VITE_SNIP_MCP_ORIGIN as string | undefined)?.trim().replace(/\/$/, '') || '';
 export type PairingRequest = { requestId: string; clientName: string; verification: string };
-export type HostedPairing = { code: string; pairingExpiresAt: number };
 
 export function connectHostedAgent(handle: AgentHandler, status: (value: string) => void,
-  identity: (value: string) => void, request: (value: PairingRequest | null) => void) {
+  identity: (value: string) => void, request: (value: PairingRequest | null) => void, flowId: string) {
   const origin = new URL(hostedMcpOrigin);
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname);
   if (!window.isSecureContext || origin.origin !== hostedMcpOrigin
@@ -16,12 +15,10 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
   let socket: WebSocket, disposed = false, approved = false, resumeToken: string | undefined;
   let retries = 0, lastReply = Date.now(), pendingRequest: string | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined, reconnect: ReturnType<typeof setTimeout> | undefined;
-  let resolveReady: (value: HostedPairing) => void, rejectReady: (error: Error) => void;
-  const ready = new Promise<HostedPairing>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
 
   const stop = (message: string) => {
     disposed = true; approved = false; clearInterval(heartbeat); clearTimeout(reconnect);
-    request(null); status(message); rejectReady(new Error(message));
+    request(null); status(message);
     socket?.close();
   };
   const open = () => {
@@ -32,12 +29,12 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
       if (Date.now() - lastReply > 20_000) { active.close(); return; }
       if (active.readyState === WebSocket.OPEN) active.send(JSON.stringify({ type: 'ping' }));
     }, 5000);
-    active.onopen = () => active.send(JSON.stringify({ type: 'hello', resumeToken }));
+    active.onopen = () => active.send(JSON.stringify({ type: 'hello', resumeToken, ...(!resumeToken ? { flowId } : {}) }));
     active.onerror = () => { /* onclose handles failures and reconnects. */ };
     active.onclose = event => {
       clearInterval(heartbeat);
       if (disposed) return;
-      if (event.code === 1008 || event.code === 1000 || retries >= 4) { stop('agent disconnected — copy a new prompt to reconnect'); return; }
+      if (event.code === 1008 || event.code === 1000 || retries >= 4) { stop(''); return; }
       status('reconnecting agent…');
       reconnect = setTimeout(open, Math.min(1000 * 2 ** retries++, 8000));
     };
@@ -49,9 +46,7 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
       if (message.type === 'hosted_ready') {
         if (typeof message.resumeToken !== 'string' || typeof message.bridgeId !== 'string') { stop('invalid relay response'); return; }
         resumeToken = message.resumeToken; approved = message.approved === true; retries = 0; lastReply = Date.now();
-        identity(message.bridgeId); status(approved ? 'agent connected' : 'waiting for agent');
-        if (typeof message.code === 'string' && typeof message.pairingExpiresAt === 'number')
-          resolveReady({ code: message.code, pairingExpiresAt: message.pairingExpiresAt });
+        identity(message.bridgeId); status(approved ? 'agent connected' : 'waiting for approval');
         return;
       }
       if (message.type === 'pong') { lastReply = Date.now(); return; }
@@ -61,7 +56,7 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
       }
       if (message.type === 'pair_expired' && message.requestId === pendingRequest) { pendingRequest = undefined; request(null); return; }
       if (message.type === 'approved') { approved = true; pendingRequest = undefined; request(null); status('agent connected'); return; }
-      if (message.type === 'revoked') { stop('agent disconnected — copy a new prompt to reconnect'); return; }
+      if (message.type === 'revoked') { stop(''); return; }
       if (!approved || typeof message.id !== 'string' || typeof message.method !== 'string') return;
       const respond = (payload: unknown) => {
         if (!disposed && approved && active === socket && active.readyState === WebSocket.OPEN) active.send(JSON.stringify(payload));
@@ -77,7 +72,6 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
   };
   open();
   return {
-    ready,
     decide(requestId: string, allow: boolean) {
       if (disposed || socket.readyState !== WebSocket.OPEN) throw new Error('Connection lost. Wait for Snip to reconnect.');
       if (requestId !== pendingRequest) throw new Error('This connection request expired.');
@@ -91,12 +85,12 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
   };
 }
 
-export function hostedAgentPrompt(pairing: HostedPairing) {
-  return `Help me edit the video open in my Snip browser tab. Use Snip's remote MCP server at ${hostedMcpOrigin}/mcp. Add it using your client's Streamable HTTP / OAuth setup if it is not already available. Do not clone Snip for the normal connection.
+export function hostedAgentPrompt() {
+  return `Help me edit a video in my Snip browser tab. Connect to Snip's MCP server at ${hostedMcpOrigin}/mcp (Streamable HTTP with OAuth). If your client can't add it from here, tell me the setup step.
 
-My temporary pairing code is ${pairing.code}. When authorization opens, tell me to enter this code on the Snip connection page, then approve the matching verification code in my existing Snip tab. The code expires at ${new Date(pairing.pairingExpiresAt).toISOString()}. Authorization must happen in my browser; do not open a headless browser on your machine. If your client cannot add a server from a prompt, explain its one-time MCP setup step.
+1. When you get the Snip authorization link, send it to me. Don't open it yourself; I'll approve the connection in Snip.
+2. Call get_project. If no video is open, ask me to select one in Snip and try again. You can't open files by path.
+3. Ask what I want to change, make the edits, and let me preview them before you export.
 
-Use get_connection to confirm the connection, then get_project before editing. Use the returned sessionId and revision. Use get_frame with original-source seconds when visual inspection is needed. Retry an interrupted edit only with the same requestId and payload, or read the project again. Ask what edits I want and let me preview before starting an export. Keep the tab open. Full video and exports stay in my browser; requested frame screenshots are shared with you.
-
-If remote MCP is unsupported or the relay is unavailable, use the local setup at https://github.com/MayankBansal12/snip/blob/main/docs/editing-engine.md as a fallback. An existing project can be transferred to the local editor by saving and reopening its .snip file.`;
+If the MCP connection doesn't work, tell me what went wrong and wait. Only if I confirm, clone https://github.com/MayankBansal12/snip and follow docs/editing-engine.md for local setup.`;
 }

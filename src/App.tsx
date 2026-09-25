@@ -5,7 +5,7 @@ import { captureSourceFrame } from './agent-frame';
 import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
 import { connectHostedAgent, hostedAgentPrompt, hostedMcpOrigin } from './hosted-agent';
-import type { HostedPairing, PairingRequest } from './hosted-agent';
+import type { PairingRequest } from './hosted-agent';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
 import { requestChatEdit } from './chat';
@@ -38,12 +38,13 @@ import IconButton from './components/IconButton';
 function initialTheme(){try{return localStorage.getItem('snip-theme')|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch{return'light';}}
 export default function App(){
   const [agentToken,setAgentToken]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('agent'));
+  const [hostedFlow,setHostedFlow]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('hosted'));
   useEffect(()=>{
     const readPairingLink=()=>{
-      const token=new URLSearchParams(location.hash.slice(1)).get('agent');
-      if(!token)return;
+      const params=new URLSearchParams(location.hash.slice(1)),token=params.get('agent'),flow=params.get('hosted');
+      if(!token&&!flow)return;
       window.history.replaceState(null,'',location.pathname+location.search);
-      setAgentToken(token);
+      if(token)setAgentToken(token);if(flow)setHostedFlow(flow);
     };
     readPairingLink();window.addEventListener('hashchange',readPairingLink);
     return()=>window.removeEventListener('hashchange',readPairingLink);
@@ -55,8 +56,6 @@ export default function App(){
   const capturingFrame=useRef(false);
   const disconnectAgent=useRef<(()=>void)|null>(null),agentHandler=useRef<AgentHandler>(async()=>{throw new Error('Editor is loading.');});
   const hostedAgent=useRef<ReturnType<typeof connectHostedAgent>|null>(null);
-  const [hostedPairing,setHostedPairing]=useState<HostedPairing|null>(null);
-  const [hostedPrompt,setHostedPrompt]=useState('');
   const [agentRequest,setAgentRequest]=useState<PairingRequest|null>(null);
   const session=useRef(new EditSession(uid())),exportLock=useRef(false),pointerActive=useRef(false);
   const exportJob=useRef<{id:string;sessionId:string;revision:number;status:string;progress:number;name?:string;size?:number;error?:string}|null>(null);
@@ -81,24 +80,22 @@ export default function App(){
   const duration=sequenceDuration(edits);
   const endAgent=()=>{
     disconnectAgent.current?.();disconnectAgent.current=null;hostedAgent.current=null;
-    setAgentStatus('');setAgentBridge('');setHostedPairing(null);setHostedPrompt('');setAgentRequest(null);
-  };
-  const prepareHosted=async()=>{
-    if(!source||!ready||loadLock.current)throw new Error('Open a video in Snip first, then copy the agent prompt.');
-    if(hostedAgent.current&&hostedPairing&&hostedPairing.pairingExpiresAt>Date.now())return hostedAgentPrompt(hostedPairing);
-    endAgent();
-    const connection=connectHostedAgent((method,params)=>agentHandler.current(method,params),value=>{
-      setAgentStatus(value);
-      if(value==='agent connected'||value.startsWith('agent disconnected')){setHostedPairing(null);setHostedPrompt('');}
-    },setAgentBridge,setAgentRequest);
-    hostedAgent.current=connection;disconnectAgent.current=connection.disconnect;
-    const pairing=await connection.ready;
-    const prompt=hostedAgentPrompt(pairing);setHostedPairing(pairing);setHostedPrompt(prompt);return prompt;
+    setAgentStatus('');setAgentBridge('');setAgentRequest(null);
   };
   const decideAgent=(allow:boolean)=>{
     if(!agentRequest)return;
     try{hostedAgent.current?.decide(agentRequest.requestId,allow);}catch(error){setError(error instanceof Error?error.message:'Connection failed.');}
   };
+  useEffect(()=>{
+    if(!hostedFlow)return;
+    setHostedFlow(null);
+    if(!hostedMcpOrigin){setError('This Snip deployment does not have a hosted MCP connection.');return;}
+    endAgent();
+    try{
+      const connection=connectHostedAgent((method,params)=>agentHandler.current(method,params),setAgentStatus,setAgentBridge,setAgentRequest,hostedFlow);
+      hostedAgent.current=connection;disconnectAgent.current=connection.disconnect;
+    }catch(error){setError(error instanceof Error?error.message:'Could not connect the agent.');}
+  },[hostedFlow]);
 
   useEffect(()=>{let active=true;restoreProject().then(project=>{if(active&&project){const next=migrateEdits(project.edits,project.source.duration);setSource(project.source);setEdits(next);editsRef.current=next;setSelectedClip(next.clips[0].id);}}).catch(()=>{if(active)setSaved('local saving is unavailable');}).finally(()=>{if(active)setReady(true);});return()=>{active=false;};},[]);
   useEffect(()=>{if(!source){setUrl('');return;}const next=URL.createObjectURL(source.file);setUrl(next);return()=>URL.revokeObjectURL(next);},[source?.file]);
@@ -236,7 +233,7 @@ export default function App(){
       const nextProject=isProject?await readProjectFile(file):await readMetadata(file).then(source=>({source,edits:defaults(source.duration)}));
       const {source:next,edits:nextEdits}=nextProject;
       await saveProject(next,nextEdits);
-      if(hostedAgent.current)endAgent();
+      if(hostedAgent.current&&source)endAgent();
       session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
       if(isProject)setNotice('project opened');
     }catch(err){setError(err instanceof Error?err.message:'couldn’t open or save this file. your browser’s storage may be full.');}
@@ -342,9 +339,9 @@ export default function App(){
   const errorAlert = error && !showExport && <Alert variant="error" className="mt-4"><AlertDescription className="flex items-center justify-between gap-3">{error}<Button variant="ghost" size="icon-sm" aria-label="dismiss error" onClick={() => setError('')}><X /></Button></AlertDescription></Alert>;
   const agentControl=agentStatus && <div className="flex items-center gap-2">
     {agentStatus!=='agent connected' && <span role="status" className="text-xs text-muted-foreground">{agentStatus}</span>}
-    {(agentStatus==='agent connected'||hostedAgent.current) && <Button variant="ghost" size="sm" title={`Connected to ${hostedAgent.current?hostedMcpOrigin:location.host} · bridge ${agentBridge}`} onClick={endAgent}>disconnect agent</Button>}
+    {agentStatus==='agent connected' && <Button variant="ghost" size="sm" title={`Connected to ${hostedAgent.current?hostedMcpOrigin:location.host} · bridge ${agentBridge}`} onClick={endAgent}>disconnect agent</Button>}
   </div>;
-  const agentOnboarding=<AgentOnboarding prepareHosted={hostedMcpOrigin?prepareHosted:undefined} hostedPrompt={hostedPrompt} pairingCode={hostedPairing?.code} connected={!!hostedAgent.current&&agentStatus==='agent connected'} />;
+  const agentOnboarding=<AgentOnboarding hostedPrompt={hostedMcpOrigin?hostedAgentPrompt():undefined} connected={!!hostedAgent.current&&agentStatus==='agent connected'} />;
   return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !agentToken && !agentRequest && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
 
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />

@@ -6,8 +6,8 @@ export const MAX_PAYLOAD = 8 * 1024 * 1024;
 
 /** Application sessions, independent of MCP transport identifiers. No video storage. */
 export class BrowserSessions {
-  constructor({ now = Date.now, limit = 200, pairingMs = 10 * 60_000, lifetimeMs = 4 * 60 * 60_000, reconnectMs = 60_000, requestMs = 60_000 } = {}) {
-    Object.assign(this, { now, limit, pairingMs, lifetimeMs, reconnectMs, requestMs });
+  constructor({ now = Date.now, limit = 200, lifetimeMs = 4 * 60 * 60_000, reconnectMs = 60_000, requestMs = 60_000 } = {}) {
+    Object.assign(this, { now, limit, lifetimeMs, reconnectMs, requestMs });
     this.sessions = new Map();
     this.onRevoke = () => {};
     this.onDecision = () => {};
@@ -21,8 +21,7 @@ export class BrowserSessions {
       if (!session || session.socket) throw new Error('Session expired. Copy a new prompt in Snip.');
     } else {
       if (this.sessions.size >= this.limit) throw new Error('The relay is busy. Try again shortly.');
-      session = { id: randomUUID(), resumeToken: secret(), code: randomBytes(12).toString('hex'), origin,
-        expiresAt: this.now() + this.lifetimeMs, pairingExpiresAt: this.now() + this.pairingMs,
+      session = { id: randomUUID(), resumeToken: secret(), origin, expiresAt: this.now() + this.lifetimeMs,
         approved: false, pending: new Map(), lastSeen: this.now() };
       this.sessions.set(session.id, session);
     }
@@ -31,7 +30,6 @@ export class BrowserSessions {
     session.lastSeen = this.now();
     socket.on('pong', () => { if (session.socket === socket) session.lastSeen = this.now(); });
     socket.send(JSON.stringify({ type: 'hosted_ready', bridgeId: session.id, resumeToken: session.resumeToken,
-      code: session.approved ? undefined : session.code, pairingExpiresAt: session.pairingExpiresAt,
       expiresAt: session.expiresAt, approved: session.approved }));
     socket.on('message', data => {
       if (session.socket !== socket || !this.sessions.has(session.id)) return;
@@ -67,11 +65,6 @@ export class BrowserSessions {
     return session;
   }
 
-  findPairing(code) {
-    return [...this.sessions.values()].find(s => this.get(s.id) && !s.approved && s.code === code
-      && s.pairingExpiresAt > this.now() && s.socket?.readyState === WebSocket.OPEN);
-  }
-
   send(session, message) {
     if (session.socket?.readyState === WebSocket.OPEN) session.socket.send(JSON.stringify(message));
   }
@@ -103,19 +96,18 @@ export class BrowserSessions {
     for (const request of session.pending.values()) request.finish(new Error(message));
   }
 
-  revoke(session) {
+  revoke(session, closeCode = 1000, reason = 'Session ended') {
     if (!this.sessions.delete(session.id)) return;
     this.rejectPending(session, 'Browser access revoked.');
     this.onRevoke(session);
     this.send(session, { type: 'revoked' });
-    session.socket?.close(1000, 'Session ended');
+    session.socket?.close(closeCode, reason);
   }
 
   sweep() {
     for (const session of this.sessions.values()) {
       if (!this.get(session.id)) continue;
-      if ((!session.approved && session.pairingExpiresAt <= this.now())
-        || (session.socket && this.now() - session.lastSeen > 25_000)) this.revoke(session);
+      if (session.socket && this.now() - session.lastSeen > 25_000) this.revoke(session);
       else if (session.socket?.readyState === WebSocket.OPEN) {
         session.socket.ping();
         this.send(session, { type: 'pong' });
