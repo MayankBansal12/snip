@@ -67,9 +67,10 @@ try {
   await button('copied').waitFor();
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   assert.equal(prompt, displayedPrompt);
-  assert.ok(prompt.includes(`${relayOrigin}/mcp`)); assert.match(prompt, /Snip authorization link, send it to me/);
-  assert.match(prompt, /no video is open, ask me to select one in Snip/); assert.match(prompt, /preview them before you export/);
-  assert.match(prompt, /Only if I confirm, clone/); assert.ok(prompt.length < 900);
+  assert.ok(prompt.includes(`${relayOrigin}/mcp`)); assert.match(prompt, /send me the authorization link/);
+  assert.match(prompt, /no video is open, ask me to select one/); assert.match(prompt, /Call start_export only after I approve/);
+  assert.match(prompt, /If the hosted connection fails, briefly explain why/);
+  assert.ok(prompt.indexOf(`${relayOrigin}/mcp`) < prompt.indexOf('docs/editing-engine.md')); assert.ok(prompt.length < 1000);
   assert.equal(prompt.includes('access_token'), false);
   assert.equal(relay.sessions.sessions.size, 0); assert.equal(relay.auth.flows.size, 0);
   await page.keyboard.press('Escape');

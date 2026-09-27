@@ -84,13 +84,3 @@ export function connectHostedAgent(handle: AgentHandler, status: (value: string)
     },
   };
 }
-
-export function hostedAgentPrompt() {
-  return `Help me edit a video in my Snip browser tab. Connect to Snip's MCP server at ${hostedMcpOrigin}/mcp (Streamable HTTP with OAuth). If your client can't add it from here, tell me the setup step.
-
-1. When you get the Snip authorization link, send it to me. Don't open it yourself; I'll approve the connection in Snip.
-2. Call get_project. If no video is open, ask me to select one in Snip and try again. You can't open files by path.
-3. Ask what I want to change, make the edits, and let me preview them before you export.
-
-If the MCP connection doesn't work, tell me what went wrong and wait. Only if I confirm, clone https://github.com/MayankBansal12/snip and follow docs/editing-engine.md for local setup.`;
-}

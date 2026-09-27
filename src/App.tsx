@@ -4,7 +4,8 @@ import { identifySource } from './engine/source';
 import { captureSourceFrame } from './agent-frame';
 import { connectAgent } from './agent-connection';
 import type { AgentHandler } from './agent-connection';
-import { connectHostedAgent, hostedAgentPrompt, hostedMcpOrigin } from './hosted-agent';
+import { connectHostedAgent, hostedMcpOrigin } from './hosted-agent';
+import { agentPrompt } from './agent-prompt';
 import type { PairingRequest } from './hosted-agent';
 import AgentOnboarding from './components/AgentOnboarding';
 import ChatEditor from './components/ChatEditor';
@@ -342,7 +343,7 @@ export default function App(){
     {agentStatus!=='agent connected' && <span role="status" className="text-xs text-muted-foreground">{agentStatus}</span>}
     {agentStatus==='agent connected' && <Button variant="ghost" size="sm" title={`Connected to ${hostedAgent.current?hostedMcpOrigin:location.host} · bridge ${agentBridge}`} onClick={endAgent}>disconnect agent</Button>}
   </div>;
-  const agentOnboarding=<AgentOnboarding hostedPrompt={hostedMcpOrigin?hostedAgentPrompt():undefined} />;
+  const agentOnboarding=<AgentOnboarding prompt={agentPrompt(hostedMcpOrigin)} />;
   return <TooltipProvider><div className={`app min-h-svh ${source ? 'has-video' : ''}`} onDragEnter={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); dragDepth.current++; setDraggingFile(true); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFile(false); } }} onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDraggingFile(false); if (!showExport && !agentToken && !agentRequest && !showShortcuts && !confirmClear) void openFile(e.dataTransfer.files[0]); }}>
 
     <input ref={inputRef} type="file" id="video-file" accept="video/*,.mkv,.m4v" hidden onChange={e => void openFile(e.target.files?.[0])} />
