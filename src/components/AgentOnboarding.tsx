@@ -28,6 +28,7 @@ export default function AgentOnboarding({ hostedPrompt = '', connected = false }
   const hosted = !!hostedPrompt;
   const displayedPrompt = hosted ? hostedPrompt : localPrompt;
   const contentId = useId();
+  const promptRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   async function copy() {
@@ -52,10 +53,10 @@ export default function AgentOnboarding({ hostedPrompt = '', connected = false }
       <div className="mt-4">
         <div className="min-w-0 rounded-xl bg-muted/60 p-4 sm:p-5">
           <div id={contentId}>
-            <div aria-label="full agent prompt" className={`block w-full cursor-default select-text whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground lowercase ${expanded ? 'max-h-[min(22rem,40svh)] overflow-y-auto' : 'h-12 overflow-hidden'}`}>{displayedPrompt}</div>
+            <div ref={promptRef} aria-label="full agent prompt" className={`block w-full cursor-default select-text whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground lowercase ${expanded ? 'max-h-[min(22rem,40svh)] overflow-y-auto' : 'h-12 overflow-hidden'}`}>{displayedPrompt}</div>
           </div>
           <div className="mt-5 flex items-center justify-between gap-3">
-            <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
+            <Button size="sm" variant="ghost" className="-ml-2 text-xs font-normal text-muted-foreground" aria-expanded={expanded} aria-controls={contentId} onClick={() => { if (promptRef.current) promptRef.current.scrollTop = 0; setExpanded(value => !value); }}>
               {expanded ? 'view less' : 'view more'}<ChevronDown className={`size-3.5 ${expanded ? 'rotate-180' : ''}`} />
             </Button>
             <Button size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? 'copied' : 'copy prompt'}</Button>
