@@ -132,7 +132,6 @@ body { text-transform: lowercase; }
 
 /* Viewer and timeline share the same card surface and outer geometry. */
 .workspace { gap:12px; }
-.viewer-tools { margin-bottom:12px; }
 .preview-panel .player { padding-bottom:0; }
 .crop-surface { position:relative; margin-inline:auto; overflow:hidden; background:var(--muted); touch-action:none; }
 .crop-surface > canvas { display:block; width:100%; height:100%; }

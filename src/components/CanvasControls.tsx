@@ -62,9 +62,9 @@ export default function CanvasControls({ source, edits, videoRef, onUpdate, onPa
   const canResetCrop = crop.x > 1e-7 || crop.y > 1e-7 || crop.width < 1 - 1e-7 || crop.height < 1 - 1e-7;
   const changedCrop = JSON.stringify(crop) !== JSON.stringify(edits.crop) || aspect !== edits.cropAspect;
   return <>
-    <div className="viewer-tools flex flex-wrap items-center gap-1">
-      <Button size="xs" variant="ghost" onClick={() => show('crop')} aria-label="crop video"><CropIcon />crop</Button>
-      <Button size="xs" variant="ghost" onClick={() => show('dimensions')} aria-label="video dimensions"><Scaling />dimensions<span className="ml-1 hidden font-mono text-[10px] text-muted-foreground sm:inline">{output.width} × {output.height}</span></Button>
+    <div className="viewer-tools flex shrink-0 items-center gap-1">
+      <Button size="xs" variant="ghost" className="max-sm:px-1" onClick={() => show('crop')} aria-label="crop video"><CropIcon /><span className="hidden sm:inline">crop</span></Button>
+      <Button size="xs" variant="ghost" className="max-sm:px-1" onClick={() => show('dimensions')} aria-label="video dimensions"><Scaling /><span className="hidden sm:inline">dimensions</span><span className="ml-1 hidden font-mono text-[10px] text-muted-foreground sm:inline">{output.width} × {output.height}</span></Button>
     </div>
     <Dialog open={open !== null} onOpenChange={value => { if (!value) setOpen(null); }}>
       <DialogPopup className={open === 'crop' ? 'sm:max-w-2xl' : undefined} closeProps={{ 'aria-label': 'close video settings' }}>
