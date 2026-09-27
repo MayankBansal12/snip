@@ -43,7 +43,7 @@ export function normalizeEdits(value: unknown, duration: number): Edits {
     if (c.zoom !== undefined) keys(object(c.zoom), ['scale','x','y']);
   }
   keys(object(raw.crop), ['x','y','width','height']);
-  keys(object(raw.canvas), ['aspect','ratio','fit','background','inset','customWidth','customHeight']);
+  keys(object(raw.canvas), ['aspect','ratio','fit','background','inset','customWidth','customHeight','outputWidth','outputHeight']);
   if (Array.isArray(raw.annotations)) for (const annotation of raw.annotations) {
     const a = object(annotation); keys(a, ['id','type','x','y','width','height','text','color','size','points']);
     if (Array.isArray(a.points)) for (const point of a.points) keys(object(point), ['x','y']);
