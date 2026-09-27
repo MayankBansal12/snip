@@ -20,6 +20,7 @@ import type { Clip, Edits, Source } from './types';
 import { readMetadata, thumbnails } from './media';
 import { createProjectFile, readProjectFile, MAX_VIDEO_SIZE } from './project-file';
 import Preview from './components/Preview';
+import CanvasControls from './components/CanvasControls';
 import Timeline from './components/Timeline';
 import ExportDialog from './components/ExportDialog';
 import ScissorsMark from './components/ScissorsMark';
@@ -378,13 +379,13 @@ export default function App(){
       <footer className="flex items-center justify-center gap-3 px-6 pb-5 text-xs text-muted-foreground"><span>free</span><span aria-hidden="true" className="size-1 shrink-0 rounded-full bg-primary" /><span>no-watermark</span><span aria-hidden="true" className="size-1 shrink-0 rounded-full bg-primary" /><span>local in browser</span></footer>
     </main> : <main className="editor mx-auto w-full max-w-6xl px-4 pb-6 sm:px-8">
       <div className="workspace" inert={loading || busy}>
-        <section ref={previewRef} aria-label="video preview" className="preview-panel">
+        <Card className="preview-panel p-3" render={<section ref={previewRef} aria-label="video preview" />}>
           <Preview playing={playing} time={time} editing={actionsOpen||(editorMode==='chat'&&!playing)} source={source} edits={edits} clip={edits.clips[activeClip.current]} url={url} videoRef={videoRef} onLoaded={() => { const v = videoRef.current; if (v) { v.currentTime = editsRef.current.clips[0].start; v.playbackRate = clipSpeed(editsRef.current.clips[0],editsRef.current); v.muted = editsRef.current.muted; activeClip.current = 0; setTime(0); } }} onToggle={togglePlayback} />
-          <div className="player flex items-center justify-between gap-3 py-4">
-            <div className="flex items-center gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><span className="play-time whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{formatTime(time)}</span> / {formatTime(duration)}</span></div>
-            <div className="flex items-center gap-1"><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
+          <div className="player flex flex-wrap items-center justify-between gap-2 py-4">
+            <div className="flex items-center gap-1 sm:gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><span className="play-time whitespace-nowrap font-mono text-[10px] sm:text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{formatTime(time)}</span> / {formatTime(duration)}</span></div>
+            <div className="ml-auto flex items-center gap-1"><CanvasControls source={source} edits={edits} videoRef={videoRef} onUpdate={update} onPause={pausePlayback} /><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
-        </section>
+        </Card>
         <Card className="editor-controls p-3" render={<section aria-label="video editor" />}>
           <Timeline
             chatActive={editorMode==='chat'}

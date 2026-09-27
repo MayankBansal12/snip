@@ -12,7 +12,7 @@ export type Annotation = {
 };
 export type Edits = {
   version: 2; clips: Clip[]; speed: number; crop: Crop; cropAspect: string;
-  canvas: { aspect: string; ratio: number | null; fit: 'fit' | 'fill'; background: string; inset: number; customWidth?: number; customHeight?: number };
+  canvas: { aspect: string; ratio: number | null; fit: 'fit' | 'fill'; background: string; inset: number; customWidth?: number; customHeight?: number; outputWidth?: number; outputHeight?: number };
   filter: string; intensity: number; brightness: number; contrast: number;
   annotations: Annotation[]; resolution: string; format: 'mp4' | 'webm'; quality: string; muted: boolean;
 };
@@ -88,6 +88,8 @@ export function cropPixels(source: Source, crop: Crop) {
 }
 export function canvasSize(source: Source, edits: Edits) {
   const crop = cropPixels(source, edits.crop);
+  // Explicit pixel sizes are separate from legacy custom aspect-ratio quantities.
+  if (edits.canvas.outputWidth && edits.canvas.outputHeight) return { width: edits.canvas.outputWidth, height: edits.canvas.outputHeight };
   if (!edits.canvas.ratio) return { width: crop.width, height: crop.height };
   const ratio = edits.canvas.ratio;
   const short = Math.min(crop.width, crop.height);

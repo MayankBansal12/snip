@@ -15,6 +15,7 @@ export function canCopyPicture(source: Source, edits: Edits): boolean {
     && edits.clips.length === 1 && clip.start === 0 && clip.end === source.duration
     && clipSpeed(clip, edits) === 1 && (!clip.zoom || clip.zoom.scale === 1)
     && edits.crop.x === 0 && edits.crop.y === 0 && edits.crop.width === 1 && edits.crop.height === 1
+    && edits.canvas.outputWidth === undefined && edits.canvas.outputHeight === undefined
     && edits.canvas.ratio === null && edits.canvas.inset === 0 && edits.resolution === 'original'
     && edits.filter === 'Original' && edits.brightness === 0 && edits.contrast === 0
     && edits.annotations.length === 0;

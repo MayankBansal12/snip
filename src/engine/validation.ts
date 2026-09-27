@@ -66,10 +66,15 @@ export function validateEdits(value: unknown, duration: number, endpointToleranc
   const checkedCrop = { x: number(crop.x, 0, 1), y: number(crop.y, 0, 1),
     width: number(crop.width, Number.EPSILON, 1), height: number(crop.height, Number.EPSILON, 1) };
   if (checkedCrop.x + checkedCrop.width > 1.0000001 || checkedCrop.y + checkedCrop.height > 1.0000001) return fail();
+  const dimensions = canvas.outputWidth === undefined && canvas.outputHeight === undefined ? {} : {
+    outputWidth: number(canvas.outputWidth, 2, 8192), outputHeight: number(canvas.outputHeight, 2, 8192),
+  };
+  if (dimensions.outputWidth !== undefined && dimensions.outputHeight !== undefined &&
+    (dimensions.outputWidth % 2 || dimensions.outputHeight % 2)) return fail();
   return {
     version: 2, clips, annotations, crop: checkedCrop, muted: e.muted,
     speed: number(e.speed, .25, 4), cropAspect: choice(e.cropAspect, ['Free', 'Original', '1:1', '16:9', '9:16', '4:5', '4:3', '21:9']),
-    canvas: { aspect: choice(canvas.aspect, ['Original', 'Custom', '1:1', '16:9', '9:16', '4:5', '4:3', '21:9']),
+    canvas: { ...dimensions, aspect: choice(canvas.aspect, ['Original', 'Custom', '1:1', '16:9', '9:16', '4:5', '4:3', '21:9']),
       ratio: canvas.ratio === null ? null : number(canvas.ratio, .2, 5),
       fit: choice(canvas.fit, ['fit', 'fill']), background: color(canvas.background), inset: number(canvas.inset, 0, 20),
       ...(canvas.customWidth === undefined ? {} : { customWidth: number(canvas.customWidth, 1, 8192) }),
