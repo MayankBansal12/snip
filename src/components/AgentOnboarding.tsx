@@ -38,7 +38,7 @@ export default function AgentOnboarding({ hostedPrompt = '' }: Props) {
     }
   }
   return <Popover>
-    <PopoverTrigger openOnHover delay={150} closeDelay={250} render={<Button variant="ghost" size="sm" className="group text-sm font-normal text-muted-foreground" />}>
+    <PopoverTrigger openOnHover delay={150} closeDelay={1000} render={<Button variant="ghost" size="sm" className="group text-sm font-normal text-muted-foreground" />}>
       use snip with your agent<ChevronDown className="size-3.5 group-data-popup-open:rotate-180" />
     </PopoverTrigger>
     <PopoverPopup align="end" sideOffset={12} className="w-[min(32rem,calc(100vw-2rem))] rounded-2xl shadow-xl/5 motion-reduce:transition-none">
