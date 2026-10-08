@@ -17,10 +17,13 @@ import { cancelExport, exportVideo } from './export';
 import { createPlayback } from './playback';
 import { clearProject, restoreProject, saveEdits, saveProject, saveSource } from './storage';
 import { defaultZoom, zoomPresets, trimBounds, clamp, speedPresets, canMergeClips, clipDuration, clipSpeed, defaults, formatTime, migrateEdits, sequenceDuration, toSequenceTime, toSourceTime, uid } from './types';
-import type { Clip, Edits, Source } from './types';
+import type { Blur, Clip, Edits, Source } from './types';
 import { readMetadata, thumbnails } from './media';
 import { createProjectFile, readProjectFile, MAX_VIDEO_SIZE } from './project-file';
 import Preview from './components/Preview';
+import BlurControls from './components/BlurControls';
+import BlurTracks from './components/BlurTracks';
+import { blurActive, blurName } from './blur';
 import CanvasControls from './components/CanvasControls';
 import Timeline from './components/Timeline';
 import ExportDialog from './components/ExportDialog';
@@ -65,8 +68,10 @@ export default function App(){
   useEffect(()=>()=>disconnectAgent.current?.(),[]);
   useEffect(()=>{const down=()=>{pointerActive.current=true;},up=()=>{pointerActive.current=false;};window.addEventListener('pointerdown',down,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);window.addEventListener('blur',up);return()=>{window.removeEventListener('pointerdown',down,true);window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',up,true);window.removeEventListener('blur',up);};},[]);
   const [actionsOpen,setActionsOpen]=useState(false),[showShortcuts,setShowShortcuts]=useState(false),[showMenu,setShowMenu]=useState(false),[timelineZoom,setTimelineZoom]=useState(1);
+  const [blurEditing,setBlurEditing]=useState(false),[selectedBlur,setSelectedBlur]=useState('');
   const [source,setSource]=useState<Source|null>(null),[edits,setEdits]=useState<Edits>(()=>defaults(0));
   const editsRef=useRef(edits);editsRef.current=edits;
+  useEffect(()=>{if(!edits.blurs.some(b=>b.id===selectedBlur))setSelectedBlur(edits.blurs[0]?.id??'');},[edits.blurs,selectedBlur]);
   const [url,setUrl]=useState(''),[ready,setReady]=useState(false),[loading,setLoading]=useState(false);
   const [notice,setNotice]=useState(''),[projectDownload,setProjectDownload]=useState<Download|null>(null);
   const [error,setError]=useState(''),[saved,setSaved]=useState('saved on this device'),[draggingFile,setDraggingFile]=useState(false);
@@ -134,6 +139,30 @@ export default function App(){
   const undo=useCallback(()=>{const h=history.current;if(!h.past.length)return;pausePlayback();h.future.push(structuredClone(editsRef.current));apply(h.past.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
   const redo=useCallback(()=>{const h=history.current;if(!h.future.length)return;pausePlayback();h.past.push(structuredClone(editsRef.current));apply(h.future.pop()!);refreshHistory(v=>v+1);},[apply,pausePlayback]);
   const seek=useCallback((position:number)=>{const e=editsRef.current,p=toSourceTime(position,e);pausePlayback();if(videoRef.current)videoRef.current.currentTime=p.time;activeClip.current=p.index;if(videoRef.current)videoRef.current.playbackRate=clipSpeed(e.clips[p.index],e);setSelectedClip(e.clips[p.index].id);setTime(toSequenceTime(p.time,e,p.index));},[pausePlayback]);
+  const changeBlur=(id:string,patch:Partial<Blur>,record=true)=>{
+    const blur=editsRef.current.blurs.find(b=>b.id===id);
+    if(!blur||Object.entries(patch).every(([key,value])=>blur[key as keyof Blur]===value))return;
+    update({blurs:editsRef.current.blurs.map(b=>b.id===id?{...b,...patch}:b)},record);
+  };
+  const selectBlur=(id:string,open=true,preview=true)=>{
+    const b=editsRef.current.blurs.find(b=>b.id===id);if(!b)return;
+    pausePlayback();setSelectedBlur(id);if(open)setBlurEditing(true);setActionsOpen(false);setEditorMode('timeline');
+    if(preview&&!blurActive(b,time))seek(Math.min(b.start,sequenceDuration(editsRef.current)));
+  };
+  const addBlur=()=>{
+    pausePlayback();const e=editsRef.current,total=sequenceDuration(e),position=toSourceTime(time,e);
+    const clipStart=e.clips.slice(0,position.index).reduce((sum,c)=>sum+clipDuration(c,e),0),clipEnd=clipStart+clipDuration(e.clips[position.index],e);
+    const rounded=Math.round(time*100)/100;
+    const start=clipEnd-rounded<Math.min(1,(clipEnd-clipStart)*.1)?clipStart:clamp(rounded,clipStart,clipEnd);
+    let number=1;while(e.blurs.some((b,i)=>blurName(b,i)===`blur ${number}`))number++;
+    const previous=e.blurs.find(b=>b.id===selectedBlur),width=previous?.width??.3,height=previous?.height??.2;
+    const blur:Blur={id:uid(),name:`blur ${number}`,x:previous?clamp(previous.x+.06,0,1-width):.35,y:previous?clamp(previous.y+.06,0,1-height):.4,width,height,start,end:Math.max(start+Math.min(.1,total),clipEnd),strength:50};
+    update({blurs:[...e.blurs,blur]});setSelectedBlur(blur.id);setBlurEditing(true);setActionsOpen(false);setEditorMode('timeline');seek(start);
+  };
+  const deleteBlur=()=>{
+    const e=editsRef.current,index=e.blurs.findIndex(b=>b.id===selectedBlur);if(index<0)return;
+    pausePlayback();const blurs=e.blurs.filter(b=>b.id!==selectedBlur);update({blurs});setSelectedBlur(blurs[Math.min(index,blurs.length-1)]?.id??'');
+  };
   const togglePlayback=useCallback(()=>{if(!busy)playback.current?.toggle();},[busy]);
   const splitLocation=toSourceTime(time,edits),at=edits.clips[splitLocation.index];const canSplit=!!at&&splitLocation.time-at.start>=.1&&at.end-splitLocation.time>=.1;
   const split=useCallback(()=>{const e=editsRef.current,position=toSourceTime(time,e),c=e.clips[position.index];if(position.time-c.start<.1||c.end-position.time<.1)return;pausePlayback();const rightId=uid();command([{action:'splitClip',clipId:c.id,sourceTime:position.time,rightClipId:rightId}]);setSelectedClip(rightId);},[time,command,pausePlayback]);
@@ -144,7 +173,7 @@ export default function App(){
     const e=editsRef.current,index=e.clips.findIndex(c=>c.id===id);if(index<0)return;
     pausePlayback();
     if(activeClip.current!==index)seek(e.clips.slice(0,index).reduce((sum,c)=>sum+clipDuration(c,e),0));
-    setSelectedClip(id);setEditorMode('timeline');setActionsOpen(true);
+    setSelectedClip(id);setBlurEditing(false);setEditorMode('timeline');setActionsOpen(true);
   };
   const changeClip=(patch:Partial<Clip>,record=true)=>{
     const c=editsRef.current.clips.find(c=>c.id===selectedClip);if(!c)return;const commands:Command[]=[];
@@ -204,7 +233,7 @@ export default function App(){
     reorder,nudgeTrim,quickExport:()=>{setShowExport(true);void startExport(true);},
     zoom:direction=>setTimelineZoom(value=>Math.max(1,Math.min(8,direction>0?value*2:value/2))),expand:expandPreview,
     open:()=>inputRef.current?.click(),openProject:()=>projectInputRef.current?.click(),saveProject:downloadProject,export:openExport,help:()=>{pausePlayback();setShowShortcuts(true);},
-    escape:()=>setActionsOpen(false),
+    escape:()=>{setActionsOpen(false);setBlurEditing(false);},
   });
   useFilePaste({
     enabled: !source && ready && !loading && !busy && !showShortcuts && !showExport && !confirmClear,
@@ -236,7 +265,7 @@ export default function App(){
       const {source:next,edits:nextEdits}=nextProject;
       await saveProject(next,nextEdits);
       if(hostedAgent.current&&source)endAgent();
-      session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
+      session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setBlurEditing(false);setSelectedBlur('');setSource(next);setEdits(nextEdits);editsRef.current=nextEdits;setTime(0);activeClip.current=0;setSelectedClip(nextEdits.clips[0].id);setActionsOpen(false);setTimelineZoom(1);setDownload(null);setProjectDownload(null);history.current={past:[],future:[]};refreshHistory(v=>v+1);
       if(isProject)setNotice('project opened');
     }catch(err){setError(err instanceof Error?err.message:'couldn’t open or save this file. your browser’s storage may be full.');}
     finally{setLoading(false);loadLock.current=false;if(inputRef.current)inputRef.current.value='';if(projectInputRef.current)projectInputRef.current.value='';}
@@ -252,7 +281,7 @@ export default function App(){
     catch(err){if(!cancelled.current){const message=err instanceof Error?err.message:'export failed. try a smaller resolution.';Object.assign(job,{status:'failed',error:message});setError(message);}}finally{exportLock.current=false;setBusy(false);}
   }
   const stopExport=()=>{cancelled.current=true;if(exportJob.current)exportJob.current.status='cancelled';cancelExport();setProgress(0);};
-  const removeProject=async()=>{try{await clearProject();if(hostedAgent.current)endAgent();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
+  const removeProject=async()=>{try{await clearProject();if(hostedAgent.current)endAgent();pausePlayback();session.current=new EditSession(uid());exportJob.current=null;exportRequests.current.clear();setBlurEditing(false);setSelectedBlur('');setSource(null);const next=defaults(0);setEdits(next);editsRef.current=next;setDownload(null);setConfirmClear(false);setProjectDownload(null);setNotice('');setError('');history.current={past:[],future:[]};}catch{setError('couldn’t clear local storage. please try again.');}};
   const ensureEditable=()=>{
     if(!source||!ready)throw new Error('Open a video in the editor first.');
     if(loadLock.current||exportLock.current)throw new Error('The editor is busy. Wait for opening or export to finish.');
@@ -384,17 +413,18 @@ export default function App(){
           <Preview playing={playing} time={time} editing={actionsOpen||(editorMode==='chat'&&!playing)} source={source} edits={edits} clip={edits.clips[activeClip.current]} url={url} videoRef={videoRef} onLoaded={() => { const v = videoRef.current; if (v) { v.currentTime = editsRef.current.clips[0].start; v.playbackRate = clipSpeed(editsRef.current.clips[0],editsRef.current); v.muted = editsRef.current.muted; activeClip.current = 0; setTime(0); } }} onToggle={togglePlayback} />
           <div className="player flex flex-wrap items-center justify-between gap-2 py-4">
             <div className="flex items-center gap-1 sm:gap-3"><IconButton label={playing ? 'pause' : 'play'} aria-keyshortcuts="Space" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</IconButton><span className="play-time whitespace-nowrap font-mono text-[10px] sm:text-xs tabular-nums text-muted-foreground"><span className="text-foreground">{formatTime(time)}</span> / {formatTime(duration)}</span></div>
-            <div className="ml-auto flex items-center gap-1"><CanvasControls source={source} edits={edits} videoRef={videoRef} onUpdate={update} onPause={pausePlayback} /><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
+            <div className="ml-auto flex items-center gap-1"><BlurControls source={source} edits={edits} videoRef={videoRef} open={blurEditing} onOpenChange={open=>{pausePlayback();setBlurEditing(open);if(open){setActionsOpen(false);setEditorMode('timeline');}}} selected={selectedBlur} duration={duration} time={time} onSelect={(id,preview=true)=>selectBlur(id,true,preview)} onAdd={addBlur} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onChange={changeBlur} onCheckpoint={()=>{pausePlayback();checkpoint();}} onDelete={deleteBlur} onSeek={seek} /><CanvasControls source={source} edits={edits} videoRef={videoRef} onUpdate={update} onPause={pausePlayback} /><IconButton label={edits.muted ? 'unmute video' : 'mute video'} aria-keyshortcuts="K" onClick={() => update({ muted: !edits.muted })}>{edits.muted ? <VolumeX /> : <Volume2 />}</IconButton><IconButton label="expand preview" aria-keyshortcuts="F" onClick={expandPreview}><Maximize2 /></IconButton></div>
           </div>
         </Card>
         <Card className="editor-controls p-3" render={<section aria-label="video editor" />}>
           <Timeline
+            blurTracks={<BlurTracks blurs={edits.blurs} duration={duration} maxTime={source.duration*4} time={time} selected={selectedBlur} onSelect={id=>selectBlur(id,false)} onFocus={setSelectedBlur} onEdit={selectBlur} onDelete={deleteBlur} onChange={changeBlur} onCheckpoint={()=>{pausePlayback();checkpoint();}} onSeek={seek} />}
             chatActive={editorMode==='chat'}
-            modeSwitch={<Button size="xs" variant="ghost" className="editor-mode-switch text-muted-foreground" aria-label={`switch to ${editorMode==='chat'?'editor':'chat'}`} aria-controls="editor-controls" onClick={()=>{setEditorMode(editorMode==='chat'?'timeline':'chat');setActionsOpen(false);}}>
+            modeSwitch={<Button size="xs" variant="ghost" className="editor-mode-switch text-muted-foreground" aria-label={`switch to ${editorMode==='chat'?'editor':'chat'}`} aria-controls="editor-controls" onClick={()=>{setEditorMode(editorMode==='chat'?'timeline':'chat');setActionsOpen(false);setBlurEditing(false);}}>
               {editorMode==='chat'?<ListVideo />:<MessageSquare />}<span><span className="hidden sm:inline">switch to </span>{editorMode==='chat'?'editor':'chat'}</span>
             </Button>}
             chatEditor={<ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />}
-            onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip}
+            onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={id=>{setSelectedClip(id);setBlurEditing(false);}} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip}
           />
         </Card>
       </div>

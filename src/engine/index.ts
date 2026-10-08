@@ -36,7 +36,7 @@ export function parseJSON(text: string): unknown {
 /** Pure, deterministic normalization. Legacy omitted values become explicit. */
 export function normalizeEdits(value: unknown, duration: number): Edits {
   const raw = object(value);
-  const allowed = ['version','clips','speed','crop','cropAspect','canvas','filter','intensity','brightness','contrast','annotations','resolution','format','quality','muted'];
+  const allowed = ['version','clips','speed','crop','cropAspect','canvas','filter','intensity','brightness','contrast','annotations','blurs','resolution','format','quality','muted'];
   keys(raw, allowed);
   if (Array.isArray(raw.clips)) for (const clip of raw.clips) {
     const c = object(clip); keys(c, ['id','start','end','speed','zoom']);
@@ -44,6 +44,7 @@ export function normalizeEdits(value: unknown, duration: number): Edits {
   }
   keys(object(raw.crop), ['x','y','width','height']);
   keys(object(raw.canvas), ['aspect','ratio','fit','background','inset','customWidth','customHeight','outputWidth','outputHeight']);
+  if (Array.isArray(raw.blurs)) for (const blur of raw.blurs) keys(object(blur), ['id','name','x','y','width','height','start','end','strength']);
   if (Array.isArray(raw.annotations)) for (const annotation of raw.annotations) {
     const a = object(annotation); keys(a, ['id','type','x','y','width','height','text','color','size','points']);
     if (Array.isArray(a.points)) for (const point of a.points) keys(object(point), ['x','y']);
