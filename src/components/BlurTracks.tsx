@@ -56,7 +56,7 @@ export default function BlurTracks({ blurs, duration, maxTime, time, selected, o
           if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); onDelete(); }
           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); retime(blur, null, (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 1 : .1)); }
         }}>
-        <span>{label}{outside ? ` · outside video → ${blurTimecode(blur.start)}` : status === 'clipped' ? ' · past video end' : ''}</span>
+        <span>{label}{outside ? ` · outside video → ${blurTimecode(blur.start)}` : status === 'clipped' ? ' · past video end' : ` · ${blurTimecode(blur.start)}–${blurTimecode(blur.end)}`}</span>
         {!outside && (['start', 'end'] as const).map(edge => <div key={edge} className={`blur-handle ${edge}`} role="slider" tabIndex={0} aria-label={`${label} ${edge}`} aria-valuemin={edge === 'start' ? 0 : blur.start} aria-valuemax={edge === 'start' ? Math.min(blur.end, duration) : Math.max(duration, blur.end)} aria-valuenow={blur[edge]} aria-valuetext={blurTimecode(blur[edge])}
           onPointerDown={event => start(event, blur, edge)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
           onKeyDown={event => {

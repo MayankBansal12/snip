@@ -1,9 +1,56 @@
-import type { Blur } from './types.js';
+import type { Blur, Edits } from './types.js';
+import { clipDuration, clipSpeed } from './types.js';
 
 export const blurActive = (blur: Blur, time: number) => time >= blur.start && time < blur.end;
 export const blurRadius = (blur: Blur, width: number, height: number) => Math.min(width, height) * blur.strength / 2000;
 export const blurName = (blur: Blur, index: number) => blur.name?.trim() || `blur ${index + 1}`;
 export const blurRangeStatus = (blur: Blur, duration: number) => blur.start >= duration ? 'outside' : blur.end > duration + 1e-7 ? 'clipped' : 'inside';
+
+// Store editable ranges in output time. When clips change, project the covered
+// source intervals onto the new sequence (also works across splits/merges).
+// If reordered clips separate covered content, create one area per contiguous
+// run rather than blurring unrelated footage between them.
+export function retimeBlurs(before: Edits, after: Edits): Blur[] {
+  const timeline = (edits: Edits) => {
+    let offset = 0;
+    return edits.clips.map(clip => {
+      const start = offset, speed = clipSpeed(clip, edits); offset += clipDuration(clip, edits);
+      return { clip, start, end: offset, speed };
+    });
+  };
+  const previous = timeline(before), next = timeline(after);
+  if (previous.length === next.length && previous.every((item, i) => item.clip.start === next[i].clip.start && item.clip.end === next[i].clip.end && item.start === next[i].start && item.speed === next[i].speed)) return before.blurs;
+  const ids = new Set(before.blurs.map(blur => blur.id)), names = new Set(before.blurs.map(blurName));
+  return before.blurs.flatMap(blur => {
+    // Preserve imported ranges with no content in the original video so they
+    // remain recoverable in the outside-video menu.
+    if (blur.start >= (previous.at(-1)?.end ?? 0)) return [blur];
+    const covered = previous.flatMap(item => {
+      const start = Math.max(blur.start, item.start), end = Math.min(blur.end, item.end);
+      return end > start ? [{ start: item.clip.start + (start - item.start) * item.speed, end: item.clip.start + (end - item.start) * item.speed }] : [];
+    });
+    const mapped = next.flatMap(item => covered.flatMap(part => {
+      const start = Math.max(part.start, item.clip.start), end = Math.min(part.end, item.clip.end);
+      return end > start + 1e-9 ? [{ start: item.start + (start - item.clip.start) / item.speed, end: item.start + (end - item.clip.start) / item.speed }] : [];
+    }));
+    if (!mapped.length) return [];
+    const runs: { start: number; end: number }[] = [];
+    for (const part of mapped.sort((a, b) => a.start - b.start)) {
+      const last = runs.at(-1);
+      if (last && part.start <= last.end + 1e-9) last.end = Math.max(last.end, part.end);
+      else runs.push({ ...part });
+    }
+    return runs.map((range, index) => {
+      if (!index) return { ...blur, ...range };
+      let suffix = index + 1, id = `${blur.id.slice(0, 110)}~${suffix}`;
+      while (ids.has(id)) id = `${blur.id.slice(0, 110)}~${++suffix}`;
+      ids.add(id);
+      let number = 1; while (names.has(`blur ${number}`)) number++;
+      const name = `blur ${number}`; names.add(name);
+      return { ...blur, ...range, id, name };
+    });
+  });
+}
 
 export function fitBlurRange(blur: Blur, duration: number) {
   if (blur.start < duration) return { start: blur.start, end: Math.min(blur.end, duration) };

@@ -1,6 +1,7 @@
 import type { Clip, Edits, Source } from '../types.js';
 import { canMergeClips, clipDuration, defaultZoom, outputSize } from '../types.js';
 import { validateEdits } from './validation.js';
+import { retimeBlurs } from '../blur.js';
 
 export const ENGINE_VERSION = 1;
 export const RENDER_PROFILE = 'ffmpeg-wasm-0.12.10-single-v1';
@@ -69,6 +70,7 @@ export function applyCommands(value: Edits, commands: unknown, duration: number)
   if (!Array.isArray(commands) || !commands.length || commands.length > 1000) throw new Error('Supply 1–1,000 commands.');
   let edits = normalizeEdits(value, duration);
   for (const input of commands) {
+    const previous = { ...edits, clips: [...edits.clips] };
     const c = object(input);
     const action = c.action;
     if (action === 'reorderClips') {
@@ -104,6 +106,7 @@ export function applyCommands(value: Edits, commands: unknown, duration: number)
       }
     }
     edits = normalizeEdits(edits, duration);
+    edits.blurs = retimeBlurs(previous, edits);
   }
   return edits;
 }

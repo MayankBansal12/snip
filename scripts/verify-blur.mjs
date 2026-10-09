@@ -22,190 +22,142 @@ async function waitStored(check) {
   }, check);
 }
 
-async function openBlur() {
-  if (!await page.getByRole('dialog', { name: 'blur areas' }).isVisible()) await button('blur video').click();
-  await page.getByRole('dialog', { name: 'blur areas' }).waitFor();
-}
-async function closeBlur() {
-  await button('close blur').click();
-  await page.getByRole('dialog', { name: 'blur areas' }).waitFor({ state: 'hidden' });
-}
-async function timeField(name, value) {
-  const input = page.getByRole('textbox', { name: `blur ${name}`, exact: true });
-  await input.fill(value); await input.press('Enter');
-}
-async function previewAt(time) {
-  const control = page.getByRole('slider', { name: 'blur preview position', exact: true });
-  const surface = control.locator('xpath=ancestor::*[contains(@class,"blur-slider-control")]');
-  await surface.scrollIntoViewIfNeeded();
-  const box = await surface.boundingBox();
-  await surface.click({position:{x:8+(box.width-16)*time/4,y:box.height/2}});
-  await page.waitForFunction(time => Math.abs(Number(document.querySelector('[aria-label="blur preview position"]')?.getAttribute("aria-valuenow"))-time)<.02,time);
+async function editBlur(name) { await button(`edit ${name}`).click(); }
+async function doneBlur() { await button('done editing blur').click(); }
+async function arrow(name, key, count = 1) {
+  const handle = page.getByRole('slider', { name, exact: true });
+  for (let i = 0; i < count; i++) await handle.press(key);
 }
 try {
   await page.goto(process.env.APP_URL || 'http://127.0.0.1:5198');
-  await page.locator('#video-file').setInputFiles({ name: 'source.mp4', mimeType: 'video/mp4', buffer: readFileSync(sample) });
+  await page.locator('#video-file').setInputFiles(sample);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
-  await openBlur();
-  assert.equal((await stored()).blurs.length, 0, 'Opening blur must not create an edit');
-  await page.getByRole('slider', { name: 'blur preview position', exact: true }).press('End');
-  await button('add your first blur').click();
-  await waitStored('e.blurs.length === 1');
+  assert.equal(await page.locator('.blur-bar').count(), 0);
+  await button('add blur').click(); await waitStored('e.blurs.length === 1');
   const first = (await stored()).blurs[0];
   assert.equal(first.start, 0); assert.equal(first.end, 4);
+  assert.equal(await page.locator('video').count(), 1);
+  assert.equal(await page.locator('.blur-bar').count(), 1);
+  assert.equal(await page.getByRole('textbox', { name: 'blur name' }).count(), 0);
   const area = page.getByRole('group', { name: 'blur 1 area' });
-  const strength = page.getByRole('slider', { name: 'blur strength', exact: true });
-  await strength.press('ArrowRight'); await waitStored('e.blurs[0].strength === 51');
-  await strength.press('Control+z'); await waitStored('e.blurs[0].strength === 50');
-  await area.click();
-  assert.equal(await button('redo blur edit').isDisabled(), false, 'Selecting an area must preserve redo');
-  await area.press('Control+Shift+z'); await waitStored('e.blurs[0].strength === 51');
-  await area.press('Control+z'); await waitStored('e.blurs[0].strength === 50');
-  await area.press('Backspace'); await waitStored('e.blurs.length === 0');
-  await button('undo blur edit').click(); await waitStored('e.blurs.length === 1');
   const before = await area.boundingBox();
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down(); await page.mouse.move(before.x + before.width / 2 + 25, before.y + before.height / 2 + 15, { steps: 5 }); await page.mouse.up();
   await waitStored(`e.blurs[0].x > ${first.x}`);
   const moved = (await stored()).blurs[0];
-  await button('resize blur 1 se').press('ArrowRight');
-  await waitStored(`e.blurs[0].width > ${moved.width}`);
-  await closeBlur();
+  await button('resize blur 1 se').press('ArrowRight'); await waitStored(`e.blurs[0].width > ${moved.width}`);
   await button('undo').click(); await waitStored(`e.blurs[0].width === ${moved.width}`);
   await button('undo').click(); await waitStored(`e.blurs[0].x === ${first.x}`);
+  await area.click(); assert.equal(await button('redo').isDisabled(), false, 'Selection must preserve redo');
   await button('redo').click(); await waitStored(`e.blurs[0].x === ${moved.x}`);
-  await button('redo').click();
-  await openBlur();
-  await page.getByRole('textbox', { name: 'blur name', exact: true }).fill('email');
-  await page.getByRole('textbox', { name: 'blur name', exact: true }).press('Enter');
-  await waitStored('e.blurs[0].name === "email"');
-  const nameInput = page.getByRole('textbox', { name: 'blur name', exact: true });
-  await nameInput.fill('discarded draft'); await nameInput.press('Escape');
-  assert.equal(await nameInput.inputValue(), 'email');
-  assert.equal(await page.getByRole('dialog', { name: 'blur areas' }).isVisible(), true);
-  await timeField('start', '0:01.00'); await timeField('end', '0:03.00');
-  const startInput = page.getByRole('textbox', { name: 'blur start', exact: true });
-  await startInput.fill('0:2'); await startInput.press('Escape');
-  assert.equal(await startInput.inputValue(), '0:01.00');
-  assert.equal(await page.getByRole('dialog', { name: 'blur areas' }).isVisible(), true);
-  await waitStored('e.blurs[0].start === 1 && e.blurs[0].end === 3');
-  await page.getByRole('slider', { name: 'blur preview position', exact: true }).press('Home');
+  const strength = page.getByRole('slider', { name: 'blur strength', exact: true });
+  await strength.press('ArrowRight'); await waitStored('e.blurs[0].strength === 51');
+  await strength.press('Control+z'); await waitStored('e.blurs[0].strength === 50');
+  await strength.press('Control+Shift+z'); await waitStored('e.blurs[0].strength === 51');
+  await arrow('blur 1 start', 'ArrowRight', 10); await arrow('blur 1 end', 'ArrowLeft', 10);
+  await waitStored('Math.abs(e.blurs[0].start - 1) < .001 && Math.abs(e.blurs[0].end - 3) < .001');
+  await doneBlur(); assert.equal(await page.locator('.blur-bar').count(), 0);
+  assert.equal(await page.locator('.blur-selection[data-editing=true]').count(), 0);
+  await page.getByRole('slider', { name: 'seek video', exact: true }).press('Home');
   assert.equal(await page.locator('.composition .blur-window').count(), 0);
-  assert.equal(await page.getByRole('group', { name: 'email area' }).getAttribute('data-inactive'), 'true');
-  await page.getByRole('slider', { name: 'blur range start', exact: true }).press('ArrowRight');
-  await waitStored('Math.abs(e.blurs[0].start - 1.01) < 0.0001');
-  await previewAt(1.5); await button('start here').click();
-  await waitStored('Math.abs(e.blurs[0].start - 1.5) < 0.02');
-  await previewAt(2.5); await button('end here').click();
-  await waitStored('Math.abs(e.blurs[0].end - 2.5) < 0.02');
-  await button('whole video').click(); await waitStored('e.blurs[0].start === 0 && e.blurs[0].end === 4');
-  await button('this clip').click();
-  await timeField('start', '0:01.00'); await timeField('end', '0:03.00');
+  await editBlur('blur 1'); assert.equal(await area.getAttribute('data-inactive'), 'false', 'Selecting an inactive blur should seek into its range');
   await button('add blur').click(); await waitStored('e.blurs.length === 2');
-  await timeField('start', '0:02.50'); await timeField('end', '0:03.50');
-  await waitStored('e.blurs[1].start === 2.5 && e.blurs[1].end === 3.5');
-  await button('select email').click();
-  assert.equal(await page.getByRole('textbox', { name: 'blur name', exact: true }).inputValue(), 'email');
-  await button('select blur 1').click();
-  await page.getByRole('slider', { name: 'blur strength', exact: true }).press('ArrowRight');
-  await waitStored('e.blurs[1].strength === 51');
-  await closeBlur(); await button('undo').click(); await waitStored('e.blurs[1].strength === 50');
-  // Drags update the range without opening a popup in the middle of the gesture.
-  const bar = await page.locator('.blur-bar').nth(1).boundingBox();
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2); await page.mouse.down();
-  await page.mouse.move(bar.x + bar.width / 2 - 30, bar.y + bar.height / 2); await page.mouse.up();
-  await waitStored('e.blurs[1].start < 2.5');
-  assert.equal(await page.getByRole('dialog', { name: 'blur areas' }).isVisible(), false);
-  await button('undo').click(); await waitStored('e.blurs[1].start === 2.5');
-  await page.locator('.blur-bar').first().press('Enter');
-  await page.getByRole('dialog', { name: 'blur areas' }).waitFor(); await closeBlur();
-
-  // Trimming the tail exposes both a partial range and a fully outside range.
+  assert.equal((await stored()).blurs[1].start, 0); assert.equal((await stored()).blurs[1].end, 4);
+  assert.equal(await page.locator('.blur-bar').count(), 1, 'Multiple effects must still have only one editable range');
+  await arrow('blur 2 start', 'ArrowRight', 25); await arrow('blur 2 end', 'ArrowLeft', 5);
+  await waitStored('Math.abs(e.blurs[1].start - 2.5) < .001 && Math.abs(e.blurs[1].end - 3.5) < .001');
   const retained = (await stored()).blurs;
-  const track = await page.locator('.clip-track').boundingBox(), handle = await page.getByRole('slider', { name: 'Clip 1 end' }).boundingBox();
+  await doneBlur();
+  // Clip trims keep blurs covering surviving content; deleted coverage disappears.
+  const track = await page.locator('.clip-track').boundingBox(), handle = await page.getByRole('slider', { name: 'Clip 1 end', exact: true }).boundingBox();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
   await page.mouse.move(handle.x + handle.width / 2 - track.width / 2, handle.y + handle.height / 2); await page.mouse.up();
-  await waitStored('Math.abs(e.clips[0].end - 2) < 0.01');
+  await waitStored('Math.abs(e.clips[0].end - 2) < .01');
+  await waitStored('e.blurs.length === 1 && Math.abs(e.blurs[0].start - 1) < .001 && Math.abs(e.blurs[0].end - 2) < .01');
+  await button('undo').click(); await waitStored('e.clips[0].end === 4 && e.blurs.length === 2');
   assert.deepEqual((await stored()).blurs, retained);
-  assert.equal(await page.locator('.blur-bar[data-clipped=true]').count(), 1);
-  assert.equal(await page.locator('.blur-bar[data-outside=true]').count(), 1);
-  await openBlur(); await button('select email').click();
-  await page.getByRole('status').filter({ hasText: 'visible until' }).waitFor();
-  await page.getByRole('slider', { name: 'blur range start', exact: true }).press('ArrowRight');
-  await waitStored('e.blurs[0].start > 1 && e.blurs[0].end === 3');
-  await button('undo blur edit').click(); await waitStored('e.blurs[0].start === 1 && e.blurs[0].end === 3');
-  await button('fit to video').click(); await waitStored('e.blurs[0].start === 1 && Math.abs(e.blurs[0].end - 2) < 0.01');
-  await button('select blur 1').click();
-  await page.getByRole('status').filter({ hasText: 'this range starts after the video ends' }).waitFor();
-  await button('fit to video').click(); await waitStored('Math.abs(e.blurs[1].start - 1) < 0.01 && Math.abs(e.blurs[1].end - 2) < 0.01');
-  await closeBlur();
-  await button('undo').click(); await waitStored('e.blurs[1].start === 2.5');
-  await button('undo').click(); await waitStored('e.blurs[0].end === 3');
-  await button('undo').click(); await waitStored('e.clips[0].end === 4');
-  assert.deepEqual((await stored()).blurs, retained);
-  // A head trim also leaves independent output timestamps unchanged.
-  const head = await page.getByRole('slider', { name: 'Clip 1 start' }).boundingBox();
-  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2); await page.mouse.down();
-  await page.mouse.move(head.x + head.width / 2 + track.width / 4, head.y + head.height / 2); await page.mouse.up();
-  await waitStored('Math.abs(e.clips[0].start - 1) < 0.01');
-  assert.deepEqual((await stored()).blurs, retained);
-  await button('undo').click(); await waitStored('e.clips[0].start === 0');
-
-  await page.reload(); await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
-  await openBlur(); assert.equal(await button('select email').count(), 1);
-  await button('select email').click();
-  for (const width of [1280, 390, 320]) {
-    await page.setViewportSize({ width, height: width === 1280 ? 900 : width === 390 ? 844 : 700 });
+  // Paused preview regions provide a direct way back into editing.
+  await editBlur('blur 1'); await doneBlur();
+  await page.getByRole('button', { name: 'edit blur 1 in preview', exact: true }).click();
+  assert.equal(await page.locator('.blur-bar').count(), 1);
+  const film = await page.locator('.clip-track').boundingBox();
+  await page.locator('.timeline-clip').click({ position: { x: film.width * .65, y: 32 } });
+  assert.equal(await page.locator('.blur-bar').count(), 1, 'Filmstrip scrubbing must keep the selected effect editable');
+  await doneBlur();
+  // Adding from a selected clip uses that clip's full range, not the playhead.
+  await page.getByRole('slider', { name: 'seek video', exact: true }).press('Home');
+  await page.getByRole('slider', { name: 'seek video', exact: true }).press('Shift+ArrowRight');
+  await button('split').click(); await waitStored('e.clips.length === 2');
+  await button('add blur').click(); await waitStored('e.blurs.length === 3');
+  assert.equal((await stored()).blurs[2].start, 1); assert.equal((await stored()).blurs[2].end, 4);
+  await doneBlur();
+  const originalY = (await page.locator('.clip-track').boundingBox()).y;
+  await page.locator('.timeline-clip').first().click();
+  assert(Math.abs((await page.locator('.clip-track').boundingBox()).y - originalY) < 1, 'Changing clips must not move the timeline');
+  assert.equal(await button('edit blur 3').count(), 0, 'Effects must be scoped to selected clip');
+  assert.equal(await page.locator('.timeline-clip.selected .clip-effects-indicator').count(), 0, 'A blur starting at a cut must not count on the preceding clip');
+  await page.locator('.timeline-clip').nth(1).click();
+  assert.equal(await button('edit blur 3').count(), 1);
+  assert.equal(await page.locator('.timeline-clip.selected .clip-effects-indicator').innerText(), '3');
+  await editBlur('blur 3');
+  for (const [width, height] of [[1280, 900], [390, 844], [320, 700]]) {
+    await page.setViewportSize({ width, height });
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    const popup = await page.getByRole('dialog', { name: 'blur areas' }).boundingBox();
-    assert(popup.x >= -1 && popup.x + popup.width <= width + 1);
-    await page.screenshot({ path: `${out}/editor-${width}.png`, fullPage: true });
-    await strength.scrollIntoViewIfNeeded();
-    const previewBox = await page.locator('.blur-editor-preview').boundingBox(), popupBox = await page.getByRole('dialog', { name: 'blur areas' }).boundingBox();
-    assert(previewBox.y >= popupBox.y && previewBox.y + previewBox.height <= popupBox.y + popupBox.height, 'Preview must remain visible while adjusting strength');
-    const listStyle = await page.locator('.blur-list').evaluate(element => ({ background: getComputedStyle(element).backgroundColor, overflow: getComputedStyle(element.parentElement).overflowX }));
-    assert.notEqual(listStyle.background, 'rgba(0, 0, 0, 0)', 'Sticky list must hide scrolling settings behind it');
-    assert.equal(listStyle.overflow, 'hidden', 'Settings should not have a horizontal scrollbar');
+    await page.screenshot({ path: `${out}/direct-${width}.png`, fullPage: true });
   }
-  await button('add blur').click(); await waitStored('e.blurs.length === 3');
-  const selectedBounds = await page.locator('.blur-list-item[data-selected=true]').boundingBox(), listBounds = await page.locator('.blur-list').boundingBox();
-  assert(selectedBounds.x >= listBounds.x - 1 && selectedBounds.x + selectedBounds.width <= listBounds.x + listBounds.width + 1, 'Selected blur must scroll into view');
-  await closeBlur(); await openBlur();
-  await page.waitForFunction(() => {
-    const list = document.querySelector('.blur-list'), item = list?.querySelector('[data-selected=true]');
-    if (!item) return false;
-    const bounds = list.getBoundingClientRect(), selected = item.getBoundingClientRect();
-    return selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1;
-  });
-  const reopenedBounds = await page.locator('.blur-list-item[data-selected=true]').boundingBox(), reopenedList = await page.locator('.blur-list').boundingBox();
-  assert(reopenedBounds.x >= reopenedList.x - 1 && reopenedBounds.x + reopenedBounds.width <= reopenedList.x + reopenedList.width + 1, 'Reopening must reveal the selected blur');
-  await button('undo blur edit').click(); await waitStored('e.blurs.length === 2');
-  await button('select email').click();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await button('delete blur').click(); await waitStored('e.blurs.length === 1');
-  assert.equal(await button('select blur 1').count(), 1, 'Deleting another blur must not rename this blur');
-  await closeBlur(); await button('undo').click(); await waitStored('e.blurs.length === 2');
-  // On touch screens, short bars are covered by enlarged handles; a tap must still open them.
-  const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
-  try {
-    const touchPage = await touchContext.newPage();
-    touchPage.on('pageerror', error => errors.push(error.message));
-    await touchPage.goto(process.env.APP_URL || 'http://127.0.0.1:5198');
-    await touchPage.locator('#video-file').setInputFiles(sample);
-    await touchPage.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
-    await touchPage.getByRole('button', { name: 'blur video', exact: true }).click();
-    await touchPage.getByRole('button', { name: 'add your first blur', exact: true }).click();
-    for (const [name, value] of [['start', '2'], ['end', '2.1']]) {
-      const field = touchPage.getByRole('textbox', { name: `blur ${name}`, exact: true });
-      await field.fill(value); await field.press('Enter');
-    }
-    await touchPage.getByRole('button', { name: 'close blur', exact: true }).click();
-    await touchPage.locator('.blur-bar').tap();
-    await touchPage.getByRole('dialog', { name: 'blur areas' }).waitFor();
-    assert.equal(await touchPage.getByRole('textbox', { name: 'blur name', exact: true }).inputValue(), 'blur 1');
-  } finally { await touchContext.close(); }
-  console.log('VERIFY popover, named regions, visual timing, trim handling, undo, persistence and responsive layout passed');
+  await button('delete blur').click(); await waitStored('e.blurs.length === 2');
+  await button('undo').click(); await waitStored('e.blurs.length === 3');
+  await page.reload(); await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+  assert.equal((await stored()).blurs.length, 3); assert.equal(await page.locator('.blur-bar').count(), 0);
+  console.log('VERIFY direct preview editing, contextual effects, timeline ranges, content timing, undo and persistence passed');
+
+  // Actual touch hit testing catches oversized invisible button targets that
+  // mouse clicks and viewport-only responsive checks miss.
+  for (const [width, height] of [[320, 700], [390, 844]]) {
+    const touchContext = await browser.newContext({ viewport: { width, height }, hasTouch: true });
+    try {
+      const touch = await touchContext.newPage();
+      touch.on('pageerror', error => errors.push(error.message));
+      await touch.goto(process.env.APP_URL || 'http://127.0.0.1:5198');
+      await touch.locator('#video-file').setInputFiles(sample);
+      await touch.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+      const seek = touch.getByRole('slider', { name: 'seek video', exact: true });
+      await seek.press('Home'); await seek.press('Shift+ArrowRight');
+      await touch.getByRole('button', { name: 'split', exact: true }).click();
+      await touch.locator('.timeline-toolbar').scrollIntoViewIfNeeded();
+      const hitTargets = await touch.locator('.timeline-toolbar button').evaluateAll(buttons => buttons.filter(b => !b.disabled && b.getClientRects().length).map(b => {
+        const r = b.getBoundingClientRect();
+        return { name: b.getAttribute('aria-label') || b.textContent, correct: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === b };
+      }));
+      assert(hitTargets.every(b => b.correct), `${width}px toolbar targets overlap: ${JSON.stringify(hitTargets)}`);
+      assert.equal(await touch.locator('.manual-controls').evaluate(e => e.scrollWidth > e.clientWidth), false);
+      const tap = async name => {
+        const box = await touch.getByRole('button', { name, exact: true }).boundingBox();
+        await touch.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      };
+      await tap('add blur');
+      await touch.waitForFunction(async () => {
+        const e = (await (await import('/src/storage.ts')).restoreProject())?.edits;
+        return e?.clips.length === 2 && e.blurs.length === 1;
+      });
+      assert.equal(await touch.locator('.blur-edit-actions').evaluate(e => {
+        const row = e.getBoundingClientRect();
+        return [...e.children].every(child => {
+          const r = child.getBoundingClientRect(); return r.left >= row.left - 1 && r.right <= row.right + 1;
+        });
+      }), true, 'Strength and actions must stay inside the mobile settings row');
+      await touch.getByRole('button', { name: 'done editing blur', exact: true }).click();
+      await touch.locator('.timeline-toolbar').scrollIntoViewIfNeeded();
+      await tap('merge');
+      await touch.waitForFunction(async () => {
+        const e = (await (await import('/src/storage.ts')).restoreProject())?.edits;
+        return e?.clips.length === 1 && e.blurs.length === 1;
+      });
+    } finally { await touchContext.close(); }
+  }
+  console.log('VERIFY actual touch toolbar targets, add and merge passed at 320px and 390px');
 
   const outputs = await page.evaluate(async bytes => {
     const { readMetadata } = await import('/src/media.ts');
