@@ -18,15 +18,11 @@
 .blur-selection[data-inactive=true]{border-style:dashed}
 .blur-region-mini{position:relative;display:block;width:24px;height:16px;flex-shrink:0;background:var(--muted);border:1px solid var(--border);border-radius:2px;overflow:hidden}
 .blur-region-mini i{position:absolute;background:var(--primary);opacity:.8}
-.blur-context{margin-bottom:12px;padding-top:10px;border-top:1px solid var(--border)}
-.blur-context-row{display:flex;min-height:32px;align-items:center;flex-wrap:wrap;gap:8px}
 .blur-effect-chips{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:4px 2px;align-items:center;min-height:32px}
 .blur-effect-chip{flex-shrink:0}
 .blur-effect-chip[data-selected=true]{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 10%,var(--card))}
-.blur-edit-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
-.blur-strength{display:flex;align-items:center;gap:8px}
-.blur-strength .blur-slider{width:100px}
-.blur-context-hint{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:6px;color:var(--muted-foreground);font-size:11px}
+.blur-strength{display:flex;min-width:0;align-items:center;gap:8px}
+.blur-strength .blur-slider{flex:1;min-width:40px}
 .blur-slider-control{display:flex;align-items:center;min-height:28px;touch-action:none;user-select:none}
 .blur-slider-track{position:relative;flex:1;height:4px;border-radius:4px;background:var(--input)}
 .blur-slider-indicator{background:var(--primary);border-radius:4px}
@@ -44,9 +40,14 @@
 .blur-handle.start{left:0}.blur-handle.end{right:0}
 .blur-handle i{width:2px;height:12px;background:var(--foreground);opacity:.6}
 .blur-track-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--primary);pointer-events:none}
-@media(max-width:640px){.blur-edit-actions{width:100%;margin-left:0;justify-content:flex-end}.blur-strength{flex:1;min-width:0;margin-right:auto}.blur-strength .blur-slider{flex:1;min-width:40px;width:auto}.clip-effects-indicator{right:26px}.blur-slider-thumb{width:20px;height:20px}.blur-context-hint{font-size:10px}}
-@media(pointer:coarse){.blur-context-row,.blur-effect-chips{min-height:44px}.blur-effect-chips{padding-block:8px}.blur-track,.blur-bar{height:36px}.blur-handle{width:24px}.blur-handle i{height:18px}.blur-bar>span{padding:10px 24px}}
+@media(max-width:640px){.clip-effects-indicator{right:26px}.blur-slider-thumb{width:20px;height:20px}}
+@media(pointer:coarse){.blur-effect-chips{min-height:44px}.blur-effect-chips{padding-block:8px}.blur-track,.blur-bar{height:36px}.blur-handle{width:24px}.blur-handle i{height:18px}.blur-bar>span{padding:10px 24px}}
 .blur-selection[data-editing=false]{border-color:transparent;cursor:pointer;touch-action:manipulation}
 @media(hover:hover) and (pointer:fine){.blur-selection[data-editing=false]:hover{border-color:#fff9}}
 @media(pointer:coarse){.timeline-toolbar button::after{min-width:100%}}
 @media(max-width:359px){.editor-mode-switch>span{display:none}}
+
+.blur-area-wrap{display:flex;justify-content:center;align-items:center;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:6px}
+.blur-area-preview{position:relative;overflow:hidden;flex-shrink:0;border-radius:3px;isolation:isolate}
+.blur-area-preview>canvas{display:block;pointer-events:none}
+.blur-area-preview .blur-label{display:none}
