@@ -1,16 +1,20 @@
 import { Play, Pause } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
-import { cropPixels, canvasSize, placement, clipDuration } from '../types';
+import { cropPixels, canvasSize, placement, clipDuration, sequenceDuration } from '../types';
 import { zoomViewport } from '../zoom';
 import type { Clip, Edits, Source } from '../types';
 import { drawAnnotation, svgMatrix } from '../effects';
+import BlurArea from './BlurArea';
+import type { Blur } from '../types';
 
 type Props = {
   source: Source; edits: Edits; clip?: Clip; time: number; editing: boolean; playing: boolean; url: string; videoRef: RefObject<HTMLVideoElement | null>;
   onLoaded: () => void; onToggle: () => void;
+  blurEditing: boolean; selectedBlur: string; onSelectBlur: (id: string) => void;
+  onChangeBlur: (id: string, patch: Partial<Blur>, record?: boolean) => void; onBlurCheckpoint: () => void; onDeleteBlur: () => void;
 };
-export default function Preview({ source, edits, clip, time, editing, playing, url, videoRef, ...events }: Props) {
+export default function Preview({ source, edits, clip, time, editing, playing, url, videoRef, blurEditing, selectedBlur, onSelectBlur, onChangeBlur, onBlurCheckpoint, onDeleteBlur, ...events }: Props) {
   const frame = useRef<HTMLDivElement>(null), overlay = useRef<HTMLCanvasElement>(null);
   const previousPlayback = useRef({ playing, url });
   const [showPlaybackFeedback, setShowPlaybackFeedback] = useState(false);
@@ -56,6 +60,7 @@ export default function Preview({ source, edits, clip, time, editing, playing, u
     <svg width="0" height="0" className="filter-definitions" aria-hidden="true"><defs><filter id="video-treatment" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values={svgMatrix(edits)} /></filter></defs></svg>
     <div className="preview-boundary"><div ref={frame} className="composition rounded-lg" style={{ aspectRatio: ratio, '--ratio': ratio, background: edits.canvas.background } as CSSProperties}>
       <div className="source-window" style={sourceStyle}><video ref={videoRef} src={url || undefined} style={videoStyle} playsInline preload="auto" onLoadedMetadata={events.onLoaded} onClick={events.onToggle} /></div>
+      <BlurArea blurs={edits.blurs} time={time} duration={sequenceDuration(edits)} width={size.width} height={size.height} editing={blurEditing && !playing} selectable={!playing} selected={selectedBlur} onSelect={onSelectBlur} onChange={onChangeBlur} onCheckpoint={onBlurCheckpoint} onDelete={onDeleteBlur} />
       <div className="preview-playback-state" aria-hidden="true" data-visible={showPlaybackFeedback}>
         {playing ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
       </div>

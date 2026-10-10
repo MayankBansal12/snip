@@ -4,6 +4,7 @@ import { zoomTransition, zoomViewport, ZOOM_TRANSITION_FPS } from './zoom';
 import { drawAnnotation } from './effects';
 import { validAvcDescription } from './avc';
 import type { Source, Edits } from './types';
+import { drawBlurs } from './blur';
 
 // Color grading stays on the established FFmpeg path. Native canvas rendering
 // handles the same crop, canvas, zoom and annotation geometry as the preview.
@@ -50,6 +51,7 @@ export async function nativeExport(source: Source, edits: Edits, progress: (frac
     const audio=await renderAudio();
     signal.throwIfAborted();
     const canvas=new OffscreenCanvas(size.width,size.height),ctx=canvas.getContext('2d',{alpha:false});
+    const blurScratch=edits.blurs.length ? new OffscreenCanvas(size.width,size.height) : null;
     if(!ctx)throw new Error('Canvas rendering unavailable');
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
     const overlay=new OffscreenCanvas(size.width,size.height),overlayContext=overlay.getContext('2d');
@@ -58,7 +60,7 @@ export async function nativeExport(source: Source, edits: Edits, progress: (frac
     const target=new BufferTarget();output=new Output({format:new Mp4OutputFormat({fastStart:'in-memory'}),target});
     const direct=size.width===source.width && size.height===source.height && pos.x===0 && pos.y===0
       && pos.width===size.width && pos.height===size.height && edits.crop.x===0 && edits.crop.y===0
-      && !edits.annotations.length && edits.clips.every(clip=>!clip.zoom || clip.zoom.scale===1)
+      && !edits.annotations.length && !edits.blurs.length && edits.clips.every(clip=>!clip.zoom || clip.zoom.scale===1)
       && await track.getRotation()===0 && !await track.getFlip();
     let invalidDescription=false;
     const checkDescription=()=>{
@@ -108,6 +110,7 @@ export async function nativeExport(source: Source, edits: Edits, progress: (frac
             const view=zoomViewport(source,edits,i,elapsed);
             ctx.fillStyle=edits.canvas.background;ctx.fillRect(0,0,size.width,size.height);
             sample.draw(ctx,view.x,view.y,view.width,view.height,pos.x,pos.y,pos.width,pos.height);
+            if(blurScratch)drawBlurs(ctx,blurScratch,edits.blurs,offset+elapsed);
             if(edits.annotations.length)ctx.drawImage(overlay,0,0);
             await video.add(offset+elapsed,end-elapsed,{keyFrame:frameIndex===0});
           }
