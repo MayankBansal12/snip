@@ -152,7 +152,7 @@ export default function App(){
   const selectBlur=(id:string,open=true,preview=true)=>{
     const b=editsRef.current.blurs.find(b=>b.id===id);if(!b)return;
     pausePlayback();setSelectedBlur(id);if(open){setBlurEditing(true);setBlurOpen(true);}setActionsOpen(false);setEditorMode('timeline');
-    if(preview&&!blurActive(b,time))seek(Math.min(b.start,sequenceDuration(editsRef.current)));
+    if(preview&&!blurActive(b,time,sequenceDuration(editsRef.current)))seek(Math.min(b.start,sequenceDuration(editsRef.current)));
   };
   const addBlur=()=>{
     pausePlayback();const e=editsRef.current;

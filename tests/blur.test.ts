@@ -86,6 +86,16 @@ test('multiple overlapping blur ranges have independent, exclusive end boundarie
   assert.equal(blurActive(blur, 2), true);
 });
 
+test('a preview at the sequence end keeps its final frame blurred without extending ranges at cuts', () => {
+  const ending = { ...blur, start: 2, end: 4 };
+  assert.equal(blurActive(ending, 4, 4), true);
+  assert.equal(blurActive({ ...ending, end: 4 - Number.EPSILON * 4 }, 4, 4), true, 'Content retiming can round the endpoint slightly');
+  assert.equal(blurActive({ ...ending, end: 3.999 }, 4, 4), false, 'A blur ending earlier must stay off');
+  assert.equal(blurActive({ ...ending, start: 4, end: 6 }, 4, 4), false, 'Outside-video ranges must not appear');
+  assert.equal(blurActive({ ...ending, start: 0, end: 2 }, 2, 4), false, 'An internal cut belongs to the next clip');
+  assert.equal(blurActive(ending, 4), false, 'Export frames retain exclusive end boundaries');
+});
+
 test('damaged geometry, timing, IDs and strengths are rejected', () => {
   for (const patch of [{ x: NaN }, { x: .9 }, { width: 0 }, { start: -1 }, { end: 2 }, { end: 41 }, { strength: 0 }, { strength: Infinity }]) {
     assert.throws(() => validateEdits({ ...base(), blurs: [{ ...blur, ...patch }] }, 10));

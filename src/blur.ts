@@ -1,7 +1,15 @@
 import type { Blur, Edits } from './types.js';
 import { clipDuration, clipSpeed } from './types.js';
 
-export const blurActive = (blur: Blur, time: number) => time >= blur.start && time < blur.end;
+export const blurActive = (blur: Blur, time: number, previewDuration?: number) => {
+  // A preview parked at the sequence end still shows its last frame. Keep
+  // that frame covered, while cuts and export timestamps stay end-exclusive.
+  if (previewDuration !== undefined && time === previewDuration) {
+    const tolerance = Number.EPSILON * Math.max(1, previewDuration) * 8;
+    return blur.start < previewDuration && blur.end >= previewDuration - tolerance;
+  }
+  return time >= blur.start && time < blur.end;
+};
 export const blurRadius = (blur: Blur, width: number, height: number) => Math.min(width, height) * blur.strength / 2000;
 export const blurName = (blur: Blur, index: number) => blur.name?.trim() || `blur ${index + 1}`;
 export const blurRangeStatus = (blur: Blur, duration: number) => blur.start >= duration ? 'outside' : blur.end > duration + 1e-7 ? 'clipped' : 'inside';

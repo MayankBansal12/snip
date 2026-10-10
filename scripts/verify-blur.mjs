@@ -49,6 +49,21 @@ try {
   assert.equal(await page.locator('.blur-bar').count(), 1);
   assert.equal(await page.getByRole('textbox', { name: 'blur name' }).count(), 0);
   assert.equal(await page.locator('.composition .blur-selection[data-editing=true]').count(), 0, 'The main preview must stay clean');
+  await doneBlur();
+  const seekEnd = page.getByRole('slider', { name: 'seek video', exact: true });
+  await seekEnd.press('End');
+  assert.equal(await page.locator('.composition .blur-window').count(), 1, 'Seeking to the end must keep the last frame blurred');
+  await openBlur();
+  assert.equal(await seekEnd.getAttribute('aria-valuenow'), '4', 'Opening blur at the end must not jump back to its start');
+  assert.equal(await page.locator('.blur-area-preview .blur-window').count(), 1);
+  assert.equal(await page.getByRole('group', { name: 'blur 1 area', exact: true }).getAttribute('data-inactive'), 'false');
+  await doneBlur();
+  await seekEnd.press('ArrowLeft'); await seekEnd.press('ArrowLeft');
+  await button('play').click();
+  await button('play').waitFor({ state: 'visible' });
+  assert.equal(await seekEnd.getAttribute('aria-valuenow'), '4');
+  assert.equal(await page.locator('.composition .blur-window').count(), 1, 'Playback completion must leave its final frame blurred');
+  await seekEnd.press('Home'); await openBlur();
   const area = page.getByRole('group', { name: 'blur 1 area' });
   const before = await area.boundingBox();
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
@@ -68,6 +83,8 @@ try {
   await arrow('blur 1 start', 'ArrowRight', 10); await arrow('blur 1 end', 'ArrowLeft', 10);
   await waitStored('Math.abs(e.blurs[0].start - 1) < .001 && Math.abs(e.blurs[0].end - 3) < .001');
   await doneBlur(); assert.equal(await page.locator('.blur-bar').count(), 0);
+  await seekEnd.press('End');
+  assert.equal(await page.locator('.composition .blur-window').count(), 0, 'A blur that ends before the video must not reappear');
   await page.getByRole('slider', { name: 'seek video', exact: true }).press('Home');
   assert.equal(await page.locator('.composition .blur-window').count(), 0);
   await editBlur('blur 1'); assert.equal(await area.getAttribute('data-inactive'), 'false', 'Selecting an inactive blur should seek into its range');
@@ -180,6 +197,32 @@ try {
   }
   console.log('VERIFY touch popover, strength, timeline timing and toolbar at 320px and 390px');
 
+  const boundaryContext = await browser.newContext();
+  try {
+    const boundary = await boundaryContext.newPage();
+    boundary.on('pageerror', error => errors.push(error.message));
+    await boundary.goto(process.env.APP_URL || 'http://127.0.0.1:5198');
+    await boundary.locator('#video-file').setInputFiles(sample);
+    await boundary.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+    const seek = boundary.getByRole('slider', { name: 'seek video', exact: true });
+    const b = name => boundary.getByRole('button', { name, exact: true });
+    await seek.press('Home'); await seek.press('Shift+ArrowRight'); await seek.press('Shift+ArrowRight');
+    await b('split').click(); await boundary.locator('.timeline-clip').first().click();
+    await b('blur').click(); await b('add blur').click(); await b('done editing blur').click();
+    await seek.press('Home'); await seek.press('Shift+ArrowRight'); await seek.press('Shift+ArrowRight');
+    assert.equal(await boundary.locator('.composition .blur-window').count(), 0, 'The next clip must be clear at a cut');
+    await b('blur').click(); await b('add blur').click(); await b('done editing blur').click();
+    await b('speed 1×').click(); await b('2×').click(); await b('close speed').click();
+    await seek.press('End');
+    assert.equal(await seek.getAttribute('aria-valuenow'), '3');
+    assert.equal(await boundary.locator('.composition .blur-window').count(), 1, 'The final frame stays covered after changing speed');
+    await boundary.getByRole('slider', { name: 'Clip 2 end', exact: true }).press('ArrowLeft');
+    await seek.press('End');
+    assert.equal(await seek.getAttribute('aria-valuenow'), '2.95');
+    assert.equal(await boundary.locator('.composition .blur-window').count(), 1, 'The final frame stays covered after trimming');
+  } finally { await boundaryContext.close(); }
+  console.log('VERIFY blur persists at playback end, seek end, speed and trim boundaries; cuts stay exclusive');
+
   const outputs = await page.evaluate(async bytes => {
     const { readMetadata } = await import('/src/media.ts');
     const { defaults } = await import('/src/types.ts');
@@ -192,6 +235,7 @@ try {
       { id: 'two', x: .6, y: .3, width: .25, height: .45, start: 1, end: 2.5, strength: 60 },
       { id: 'overlap', x: .3, y: .4, width: .35, height: .2, start: 1.1, end: 1.4, strength: 90 },
       { id: 'tiny', x: .99, y: .99, width: .005, height: .005, start: 0, end: .1, strength: 100 },
+      { id: 'ending', x: .6, y: .3, width: .25, height: .45, start: 2.9, end: 3, strength: 60 },
     ] };
     if (canCopyPicture(source, { ...defaults(4), blurs: edits.blurs })) throw Error('Blur bypassed rendering');
     const project = createProjectFile(source, edits);
@@ -226,7 +270,7 @@ try {
     const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file]));
     const video = probe.streams.find(s => s.codec_type === 'video');
     assert.equal(video.width, 320); assert.equal(video.height, 180);
-    for (const [time, active] of [[.25, []], [.75, [0]], [1.25, [0, 1]], [2, [1]], [2.75, []]]) {
+    for (const [time, active] of [[.25, []], [.75, [0]], [1.25, [0, 1]], [2, [1]], [2.75, []], [2.95, [1]]]) {
       const actual = frame(file, time);
       regions.forEach((region, index) => {
         const diff = difference(actual, region);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { canvasSize, clipDuration, placement, toSourceTime } from '../types';
+import { canvasSize, clipDuration, placement, toSourceTime, sequenceDuration } from '../types';
 import type { Blur, Edits, Source } from '../types';
 import { zoomViewport } from '../zoom';
 import { drawAnnotation } from '../effects';
@@ -38,7 +38,7 @@ export default function BlurAreaPreview({ source, edits, time, selected, videoRe
   return <div className="space-y-2">
     <div className="blur-area-wrap"><div ref={frame} className="blur-area-preview" style={{ aspectRatio: ratio, width: `min(100%, ${24 * ratio}svh, ${180 * ratio}px)`, background: edits.canvas.background }}>
       <canvas ref={picture} className="size-full" aria-hidden="true" style={{ filter: 'url(#video-treatment)' }} />
-      <BlurArea blurs={edits.blurs} time={time} width={size.width} height={size.height} editing selectable selected={selected} {...events} />
+      <BlurArea blurs={edits.blurs} time={time} duration={sequenceDuration(edits)} width={size.width} height={size.height} editing selectable selected={selected} {...events} />
       <canvas ref={annotations} className="annotation-overlay" aria-hidden="true" />
     </div></div>
     {selected && <p className="text-xs text-muted-foreground">drag the box · use corners to resize</p>}
