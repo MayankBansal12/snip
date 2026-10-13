@@ -175,12 +175,19 @@ export default function App(){
     const restored=ordered.map((c,i)=>({...c,start:i?ordered[i-1].end:0,end:i===ordered.length-1?source!.duration:c.end}));
     pausePlayback();update({clips:e.clips.map(c=>restored.find(r=>r.id===c.id)!)});
   };
-  const reorder=(direction:number)=>{
-    const e=editsRef.current,index=e.clips.findIndex(c=>c.id===selectedClip),next=index+direction;
-    if(next<0||next>=e.clips.length)return;
-    const clips=[...e.clips];[clips[index],clips[next]]=[clips[next],clips[index]];
-    pausePlayback();command([{action:'reorderClips',clipIds:clips.map(c=>c.id)}]);seek(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
+  const moveClip=(id:string,next:number)=>{
+    const e=editsRef.current,index=e.clips.findIndex(c=>c.id===id);
+    if(exportLock.current||index<0||next===index||next<0||next>=e.clips.length)return;
+    const clips=[...e.clips];const [clip]=clips.splice(index,1);clips.splice(next,0,clip);
+    pausePlayback();command([{action:'reorderClips',clipIds:clips.map(c=>c.id)}]);
+    // Target the moved clip directly: subtracting accumulated floating-point
+    // durations at a cut can otherwise resolve to the preceding clip.
+    activeClip.current=next;setSelectedClip(id);
+    if(videoRef.current){videoRef.current.currentTime=clip.start;videoRef.current.playbackRate=clipSpeed(clip,e);}
+    setTime(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
+    setNotice(`clip moved to position ${next+1} of ${clips.length}`);
   };
+  const reorder=(direction:number)=>moveClip(selectedClip,editsRef.current.clips.findIndex(c=>c.id===selectedClip)+direction);
   const nudgeTrim=(edge:'start'|'end',direction:number)=>{
     if(!source)return;
     const e=editsRef.current,c=e.clips.find(c=>c.id===selectedClip);if(!c)return;
@@ -394,7 +401,7 @@ export default function App(){
               {editorMode==='chat'?<ListVideo />:<MessageSquare />}<span><span className="hidden sm:inline">switch to </span>{editorMode==='chat'?'editor':'chat'}</span>
             </Button>}
             chatEditor={<ChatEditor key={session.current.sessionId} active={editorMode==='chat'} revision={session.current.revision} onSubmit={submitChat} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} />}
-            onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip}
+            onMoveClip={moveClip} onMoveStart={pausePlayback} onUndo={undo} onRedo={redo} canUndo={history.current.past.length>0} canRedo={history.current.future.length>0} onResetTrim={resetTrim} videoRef={videoRef} zoom={timelineZoom} onZoom={setTimelineZoom} source={source} edits={edits} time={time} selected={selectedClip} frames={frames} onSelect={setSelectedClip} onSeek={seek} onClips={(clips: Clip[]) => update({ clips },false)} onCheckpoint={() => { pausePlayback(); checkpoint(); }} onSplit={split} canSplit={canSplit} actionsOpen={editorMode==='timeline'&&actionsOpen} onActionsOpen={open => { if(open)openClipActions(selectedClip);else setActionsOpen(false); }} onOpenClip={openClipActions} onChangeClip={changeClip} onMerge={mergeClips} onDelete={deleteClip}
           />
         </Card>
       </div>
