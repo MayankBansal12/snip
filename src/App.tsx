@@ -185,7 +185,6 @@ export default function App(){
     activeClip.current=next;setSelectedClip(id);
     if(videoRef.current){videoRef.current.currentTime=clip.start;videoRef.current.playbackRate=clipSpeed(clip,e);}
     setTime(clips.slice(0,next).reduce((sum,c)=>sum+clipDuration(c,e),0));
-    setNotice(`clip moved to position ${next+1} of ${clips.length}`);
   };
   const reorder=(direction:number)=>moveClip(selectedClip,editsRef.current.clips.findIndex(c=>c.id===selectedClip)+direction);
   const nudgeTrim=(edge:'start'|'end',direction:number)=>{

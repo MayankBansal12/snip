@@ -28,7 +28,6 @@ async function order(ids) {
 }
 const clip = id => page.locator(`[data-clip-id="${id}"]`);
 async function dragStart(id) {
-  await clip(id).hover({ position: { x: 24, y: 48 } });
   const box = await clip(id).locator('.clip-reorder').boundingBox();
   assert(box, 'drag handle is visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
@@ -61,7 +60,12 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.clip-thumbnails img').length >= 4);
   const box = await page.locator('.clip-track').boundingBox();
   await dragStart(ids[1]); await page.mouse.move(box.x + box.width - 4, box.y + 25, { steps: 15 });
-  assert.equal(await page.locator('.clip-drop-marker').count(), 1);
+  assert.equal(await page.locator('.clip-drop-slot').count(), 1);
+  await page.waitForTimeout(50);
+  const lifted = await page.locator('.clip-drag-preview').boundingBox();
+  await page.mouse.move(box.x + box.width - 14, box.y + 35); await page.waitForTimeout(50);
+  const followed = await page.locator('.clip-drag-preview').boundingBox();
+  assert(Math.abs(followed.x - lifted.x + 10) < 1 && Math.abs(followed.y - lifted.y - 10) < 1, 'preview follows pointer 1:1 even within the same destination');
   await order(ids); // No live mutation while dragging.
   await page.mouse.up(); await order([ids[0], ids[2], ids[3], ids[1]]);
   assert.equal(await clip(ids[1]).getAttribute('aria-pressed'), 'true');
@@ -74,8 +78,19 @@ try {
   await dragTo(ids[3], box.x + 3, box.y + 25); await order([ids[3], ...ids.slice(0, 3)]);
   await button('undo').click(); await order(ids);
   log('Dragging last to first inserts rather than swapping endpoints');
+  const body = await clip(ids[2]).boundingBox();
+  await page.mouse.move(body.x + body.width / 2, body.y + 20); await page.mouse.down();
+  await page.mouse.move(box.x + 4, body.y + 20, { steps: 12 });
+  await page.locator('.clip-drag-preview').waitFor(); await page.waitForTimeout(180);
+  assert(await page.locator('.clip-drag-preview .clip-thumbnails img').count() > 0);
+  assert.equal(await clip(ids[2]).evaluate(el => getComputedStyle(el).opacity), '0');
+  assert(await clip(ids[0]).evaluate(el => el.getBoundingClientRect().x) > box.x + 40);
+  await order(ids);
+  await page.mouse.up(); await order([ids[2], ids[0], ids[1], ids[3]]);
+  await button('undo').click(); await order(ids);
+  log('Dragging the clip body lifts real thumbnails and makes neighbors move aside without editing until drop');
   await dragStart(ids[0]); await page.mouse.move(box.x + box.width - 5, box.y + 25, { steps: 8 }); await page.keyboard.press('Escape'); await page.mouse.up(); await order(ids);
-  assert.equal(await page.locator('.clip-drop-marker,.clip-drag-label').count(), 0);
+  await page.locator('.clip-drop-slot,.clip-drag-preview').waitFor({ state: 'hidden' });
   await dragTo(ids[0], box.x + box.width - 5, box.y - 120); await order(ids);
   await dragStart(ids[0]); await page.mouse.up(); await order(ids);
   await dragTo(ids[0], box.x + box.width * .1, box.y + 25); await order(ids);
@@ -122,6 +137,11 @@ try {
     await page.screenshot({ path: path.join(out, `reorder-${width}.png`), fullPage: true });
   }
   log('Move menu remains reachable at 320, 390 and 768px without overflow');
+  await page.setViewportSize({ width: 390, height: 844 }); await seek(0);
+  const badge = await clip(ids[0]).locator('.clip-reorder').boundingBox(), ruler = await page.locator('.ruler').boundingBox();
+  await page.mouse.click(badge.x + badge.width / 2, ruler.y + 6);
+  assert(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.clip-reorder'), { x: badge.x + badge.width / 2, y: badge.y + badge.height / 2 }));
+  log('Settled motion leaves the mobile number badge above a crossing playhead');
   await page.setViewportSize({ width: 1280, height: 900 });
   await clip(ids[2]).focus(); // Touch users select a clip before its grip is revealed.
   const touchSession = await context.newCDPSession(page);
@@ -131,6 +151,12 @@ try {
   await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await order([ids[2], ids[0], ids[1], ids[3]]);
   log('Real Chromium touch events reorder through the grip');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const beforeReduced = (await stored()).clips.map(c => c.id), reducedTrack = await page.locator('.clip-track').boundingBox();
+  await dragTo(ids[3], reducedTrack.x + 5, reducedTrack.y + 25); await order([ids[3], ...beforeReduced.filter(id => id !== ids[3])]);
+  await page.locator('.clip-drag-preview').waitFor({ state: 'hidden' });
+  await button('undo').click(); await order(beforeReduced); await page.emulateMedia({ reducedMotion: 'no-preference' });
+  log('Reduced motion keeps drag feedback and insertion while skipping settling animations');
   const expected = (await stored()).clips;
   const saving = page.waitForEvent('download'); await key('Control+s'); const project = await saving;
   const projectFile = path.join(out, 'reordered.snip'); await saveDownload(project, projectFile);
