@@ -28,6 +28,7 @@ async function order(ids) {
 }
 const clip = id => page.locator(`[data-clip-id="${id}"]`);
 async function dragStart(id) {
+  await clip(id).hover({ position: { x: 24, y: 48 } });
   const box = await clip(id).locator('.clip-reorder').boundingBox();
   assert(box, 'drag handle is visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
@@ -122,6 +123,7 @@ try {
   }
   log('Move menu remains reachable at 320, 390 and 768px without overflow');
   await page.setViewportSize({ width: 1280, height: 900 });
+  await clip(ids[2]).focus(); // Touch users select a clip before its grip is revealed.
   const touchSession = await context.newCDPSession(page);
   const handle = await clip(ids[2]).locator('.clip-reorder').boundingBox(), track = await page.locator('.clip-track').boundingBox();
   await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }] });

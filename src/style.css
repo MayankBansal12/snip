@@ -106,7 +106,9 @@ body { text-transform: lowercase; }
 .timeline-toolbar[data-chat=true] { align-items: flex-start; }
 .timeline-toolbar[data-chat=true] > .editor-mode-switch { margin-top: 7px; }
 .timeline-clip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
-.clip-reorder { position: absolute; top: 5px; left: calc(50% - 14px); width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #ffffff40; border-radius: 5px; background: #171717b3; color: #fff; cursor: grab; touch-action: none; z-index: 6; }
+.clip-reorder { position: absolute; top: 5px; left: calc(50% - 14px); width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #ffffff40; border-radius: 5px; background: #171717b3; color: #fff; cursor: grab; touch-action: none; z-index: 6; opacity: 0; pointer-events: none; }
+.timeline-clip.selected .clip-reorder, .timeline-clip:focus-within .clip-reorder, .timeline-clip.reordering .clip-reorder { opacity: 1; pointer-events: auto; }
+.timeline-clip:hover .clip-reorder { opacity: 1; pointer-events: auto; }
 .clip-reorder svg { width: 18px; height: 18px; pointer-events: none; }
 .clip-reorder:active { cursor: grabbing; }
 .clip-reorder:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
