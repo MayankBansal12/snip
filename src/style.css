@@ -121,10 +121,8 @@ body { text-transform: lowercase; }
 .clip-drag-preview .clip-thumbnails img { opacity: 1; }
 .clip-drag-preview .clip-number { left: 12px; }
 .clip-drag-preview[data-valid=false] { opacity: .5; }
-.reorder-hint { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 @media (max-width:640px) {
   .clip-number.clip-reorder { min-height: 28px; bottom: 5px; max-width: calc(100% - 50px); padding-inline: 4px; }
-  .reorder-hint { font-size: 10px; }
 }
 
 .timeline [data-slot=kbd] { height: 16px; min-width: 16px; font-size: 10px; }
