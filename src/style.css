@@ -108,16 +108,16 @@ body { text-transform: lowercase; }
 .timeline-clip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
 .timeline[data-sortable=true] .timeline-clip { cursor: grab; user-select: none; }
 .timeline[data-reordering=true] .timeline-clip { cursor: grabbing; }
-.clip-number.clip-reorder { display: flex; align-items: center; justify-content: center; min-width: 28px; min-height: 22px; max-width: calc(100% - 28px); overflow: hidden; white-space: nowrap; padding: 3px 7px; border: 1px solid #ffffff20; cursor: grab; touch-action: none; pointer-events: auto; z-index: 6; }
+.clip-number.clip-reorder { display: flex; align-items: center; justify-content: center; min-width: 28px; min-height: 22px; max-width: calc(100% - 28px); overflow: hidden; white-space: nowrap; padding: 3px 7px; border: 0; cursor: grab; touch-action: none; pointer-events: auto; z-index: 6; }
 .clip-number.clip-reorder:hover { background: #111111b3; }
 .clip-number.clip-reorder:active { cursor: grabbing; }
 .clip-number.clip-reorder:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .timeline-clip.reordering { opacity: 0; }
 .timeline[data-reordering=true] .clip-handle, .timeline[data-reordering=true] .playhead { opacity: 0; }
-.clip-drop-slot { position: absolute; top: 2px; height: 60px; padding: 0 2px; border: 1px dashed color-mix(in srgb, var(--primary) 70%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); z-index: 0; pointer-events: none; display: grid; place-items: center; }
+.clip-drop-slot { position: absolute; top: 2px; height: 60px; padding: 0 2px; border: 0; border-radius: 5px; background: var(--muted); z-index: 0; pointer-events: none; display: grid; place-items: center; }
 .clip-drop-slot span { color: var(--muted-foreground); font: 10px ui-monospace, monospace; }
 .clip-drag-preview { position: fixed; left: 0; top: 0; height: 64px; border-radius: 6px; z-index: 60; pointer-events: none; box-shadow: 0 10px 25px #0003, 0 3px 7px #0002; will-change: transform; }
-.clip-drag-preview .clip-thumbnails { border-color: var(--primary); filter: none; }
+.clip-drag-preview .clip-thumbnails { filter: none; }
 .clip-drag-preview .clip-thumbnails img { opacity: 1; }
 .clip-drag-preview .clip-number { left: 12px; }
 .clip-drag-preview[data-valid=false] { opacity: .5; }
@@ -163,3 +163,44 @@ body { text-transform: lowercase; }
 .crop-corner.nw { top:-12px; left:-12px; cursor:nwse-resize; }.crop-corner.ne { top:-12px; right:-12px; cursor:nesw-resize; }
 .crop-corner.sw { bottom:-12px; left:-12px; cursor:nesw-resize; }.crop-corner.se { bottom:-12px; right:-12px; cursor:nwse-resize; }
 .crop-corner:focus-visible { outline:2px solid white; outline-offset:-4px; }
+
+/* Flat surfaces use fills and text for state and keyboard focus. Preserve hit geometry. */
+*, *::before, *::after {
+  border-color: transparent !important;
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-inset-ring-shadow: 0 0 #0000 !important;
+}
+[data-slot]::before, [data-slot]::after { box-shadow: none; }
+[data-slot=card], [data-slot=button], [data-slot=toggle], [data-slot=kbd],
+[data-slot=input-control], [data-slot=textarea-control], [data-slot=select-trigger], [data-slot=slider-thumb] { box-shadow: none; }
+[data-slot=input-control], [data-slot=textarea-control], [data-slot=select-trigger] { background: var(--muted); }
+[data-slot=input-control]:has(:focus-visible), [data-slot=textarea-control]:has(:focus-visible),
+[data-slot=button]:focus-visible, [data-slot=toggle]:focus-visible, [data-slot=select-trigger]:focus-visible { background: var(--accent); }
+[data-slot=button]:focus-visible, [data-slot=toggle]:focus-visible, [data-slot=select-trigger]:focus-visible,
+.timeline-clip:focus-visible .clip-number, .clip-reorder:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+[data-slot=separator], [data-slot=menu-separator], [data-slot=select-separator] { background: transparent; }
+.composition, .playhead > i { box-shadow: none; }
+.timeline-clip.selected .clip-number { background: var(--primary); color: #171717; }
+.clip-handle { background: transparent; }
+.clip-handle i { width: 3px; background: var(--primary); }
+[aria-invalid=true] { color: var(--destructive-foreground); }
+a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.playhead:focus-visible > span, .playhead:focus-visible > i, .clip-handle:focus-visible i,
+.crop-corner:focus-visible::after { background: var(--foreground); }
+[data-slot=slider-thumb]:has(:focus-visible) { background: var(--primary); }
+.zoom-area:focus-visible + p { text-decoration: underline; text-underline-offset: 3px; }
+.crop-selection:focus-visible { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+
+[data-slot=button]:focus-visible { color: var(--foreground); }
+label:has(input[type=color]:focus-visible) { text-decoration: underline; text-underline-offset: 3px; }
+.clip-number.clip-reorder[data-compact=true] { left: 50%; transform: translateX(-50%); min-width: 18px; width: 18px; max-width: none; padding-inline: 0; }
+[data-slot=popover-trigger]:focus-visible, [data-slot=menu-trigger]:focus-visible,
+button:focus-visible:not(.crop-corner) {
+  background: var(--accent);
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.clip-thumbnails { border: 0; }
