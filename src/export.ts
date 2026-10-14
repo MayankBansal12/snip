@@ -126,7 +126,9 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
       if(transition){
         // Animate on the output clock: slow recordings and speed changes must
         // not reduce the number of camera positions rendered per second.
-        picture.push(`fps=${transitionRate}:round=near`,'settb=AVTB',transition);
+        // fps can repeat the last trimmed frame up to the source EOF timestamp.
+        // Cap the branch on the edited clock before concatenating the next clip.
+        picture.push(`fps=${transitionRate}:round=near`,'settb=AVTB',transition,`trim=duration=${(clip.end-clip.start)/speed}`);
         outputFrameRate=Math.max(outputFrameRate,transitionRate);
       }
       if(crop.width!==source.width || crop.height!==source.height || crop.x || crop.y)picture.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
