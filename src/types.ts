@@ -1,6 +1,8 @@
 export type Crop = { x: number; y: number; width: number; height: number };
 export type ClipZoom = { scale: number; x: number; y: number };
 export type Clip = { id: string; start: number; end: number; speed?: number; zoom?: ClipZoom };
+// Geometry is relative to the final canvas; timing is on the output sequence.
+export type Blur = Crop & { id: string; name?: string; start: number; end: number; strength: number };
 export const speedPresets: readonly number[] = [.25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
 export const zoomPresets: readonly number[] = [1, 1.25, 1.5, 2, 3, 4];
 export const MIN_SPEED = .25, MAX_SPEED = 4;
@@ -14,7 +16,7 @@ export type Edits = {
   version: 2; clips: Clip[]; speed: number; crop: Crop; cropAspect: string;
   canvas: { aspect: string; ratio: number | null; fit: 'fit' | 'fill'; background: string; inset: number; customWidth?: number; customHeight?: number; outputWidth?: number; outputHeight?: number };
   filter: string; intensity: number; brightness: number; contrast: number;
-  annotations: Annotation[]; resolution: string; format: 'mp4' | 'webm'; quality: string; muted: boolean;
+  annotations: Annotation[]; blurs: Blur[]; resolution: string; format: 'mp4' | 'webm'; quality: string; muted: boolean;
 };
 export type Source = { file: Blob; name: string; width: number; height: number; duration: number };
 export const uid = () => crypto.randomUUID();
@@ -22,12 +24,13 @@ export const fullCrop: Crop = { x: 0, y: 0, width: 1, height: 1 };
 export const defaults = (duration: number): Edits => ({
   version: 2, clips: [{ id: uid(), start: 0, end: duration }], speed: 1,
   crop: { ...fullCrop }, cropAspect: 'Free', canvas: { aspect: 'Original', ratio: null, fit: 'fit', background: '#171717', inset: 0, customWidth: 16, customHeight: 9 },
-  filter: 'Original', intensity: 100, brightness: 0, contrast: 0, annotations: [],
+  filter: 'Original', intensity: 100, brightness: 0, contrast: 0, annotations: [], blurs: [],
   resolution: 'original', format: 'mp4', quality: 'maximum', muted: false,
 });
 export function migrateEdits(value: Edits | Record<string, unknown>, duration: number): Edits {
   const base = defaults(duration);
-  if (value.version === 2) return { ...base, ...value, canvas: { ...base.canvas, ...(value as Edits).canvas } } as Edits;
+  if (value.version === 2) return { ...base, ...value, canvas: { ...base.canvas, ...(value as Edits).canvas },
+    blurs: ((value as Edits).blurs ?? []).map((blur, index) => ({ ...blur, name: blur.name ?? `blur ${index + 1}` })) } as Edits;
   const old = value as Record<string, unknown>;
   return { ...base, speed: Number(old.speed) || 1, crop: (old.crop as Crop) || base.crop, cropAspect: String(old.aspect || 'Free'),
     clips: [{ id: uid(), start: Number(old.start) || 0, end: Number(old.end) || duration }],

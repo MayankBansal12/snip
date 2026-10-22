@@ -8,3 +8,46 @@
 .zoom-area[data-dragging=true]{cursor:grabbing}
 .zoom-area canvas{display:block;pointer-events:none}
 .zoom-selection{position:absolute;border:2px solid var(--primary);box-shadow:0 0 0 1000px #0008;pointer-events:auto}
+
+.blur-window{position:absolute;pointer-events:none}
+.blur-selections{position:absolute;inset:0;pointer-events:none;z-index:2}
+.blur-selection{position:absolute;border:1px dashed #fff9;pointer-events:auto;touch-action:none;cursor:grab;outline-offset:3px}
+.blur-selection[data-selected=true]{border:2px solid var(--primary)}
+.blur-selection:focus-visible{outline:2px solid var(--primary)}
+.blur-label{position:absolute;bottom:calc(100% + 4px);left:5px;font:10px ui-monospace,monospace;color:#fff;background:#1119;border-radius:3px;padding:2px 4px;pointer-events:none;white-space:nowrap}
+.blur-selection[data-inactive=true]{border-style:dashed}
+.blur-region-mini{position:relative;display:block;width:24px;height:16px;flex-shrink:0;background:var(--muted);border:1px solid var(--border);border-radius:2px;overflow:hidden}
+.blur-region-mini i{position:absolute;background:var(--primary);opacity:.8}
+.blur-effect-chips{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:4px 2px;align-items:center;min-height:32px}
+.blur-effect-chip{flex-shrink:0}
+.blur-effect-chip[data-selected=true]{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 10%,var(--card))}
+.blur-strength{display:flex;min-width:0;align-items:center;gap:8px}
+.blur-strength .blur-slider{flex:1;min-width:40px}
+.blur-slider-control{display:flex;align-items:center;min-height:28px;touch-action:none;user-select:none}
+.blur-slider-track{position:relative;flex:1;height:4px;border-radius:4px;background:var(--input)}
+.blur-slider-indicator{background:var(--primary);border-radius:4px}
+.blur-slider-thumb{display:block;width:16px;height:16px;border:1px solid var(--input);border-radius:50%;background:var(--background);box-shadow:0 1px 3px #0002;outline:none}
+.blur-slider-thumb:has(:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+.clip-effects-indicator{position:absolute;right:16px;top:5px;display:flex;align-items:center;gap:3px;color:#fff;background:#111a;padding:2px 4px;border-radius:3px;font-size:10px;pointer-events:none}
+.clip-effects-indicator svg{width:12px;height:12px}
+.blur-tracks{margin-top:8px}
+.blur-track{height:28px;position:relative;border-radius:4px;background:var(--muted)}
+.blur-bar{position:absolute;top:0;height:28px;min-width:24px;border:1px solid var(--primary);border-radius:4px;background:color-mix(in srgb,var(--primary) 20%,var(--background));cursor:grab;touch-action:pan-y;outline-offset:2px}
+.blur-bar[data-outside=true]{max-width:100%;opacity:.6;border-style:dashed}
+.blur-bar[data-clipped=true]{border-right:2px dashed var(--foreground)}
+.blur-bar>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 14px;font-size:10px;pointer-events:none}
+.blur-handle{position:absolute;top:0;bottom:0;width:12px;display:flex;align-items:center;justify-content:center;cursor:ew-resize;touch-action:pan-y}
+.blur-handle.start{left:0}.blur-handle.end{right:0}
+.blur-handle i{width:2px;height:12px;background:var(--foreground);opacity:.6}
+.blur-track-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--primary);pointer-events:none}
+@media(max-width:640px){.clip-effects-indicator{right:26px}.blur-slider-thumb{width:20px;height:20px}}
+@media(pointer:coarse){.blur-effect-chips{min-height:44px}.blur-effect-chips{padding-block:8px}.blur-track,.blur-bar{height:36px}.blur-handle{width:24px}.blur-handle i{height:18px}.blur-bar>span{padding:10px 24px}}
+.blur-selection[data-editing=false]{border-color:transparent;cursor:pointer;touch-action:manipulation}
+@media(hover:hover) and (pointer:fine){.blur-selection[data-editing=false]:hover{border-color:#fff9}}
+@media(pointer:coarse){.timeline-toolbar button::after{min-width:100%}}
+@media(max-width:359px){.editor-mode-switch>span{display:none}}
+
+.blur-area-wrap{display:flex;justify-content:center;align-items:center;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:6px}
+.blur-area-preview{position:relative;overflow:hidden;flex-shrink:0;border-radius:3px;isolation:isolate}
+.blur-area-preview>canvas{display:block;pointer-events:none}
+.blur-area-preview .blur-label{display:none}

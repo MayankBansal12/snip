@@ -11,6 +11,8 @@
     "test:reorder": "node scripts/verify-reorder.mjs",
     "test:keyboard": "node scripts/verify-keyboard-editor.mjs",
     "test:engine": "tsx --test tests/engine.test.ts",
+    "test:blur": "tsx --test tests/blur.test.ts",
+    "test:blur:browser": "node scripts/verify-blur.mjs",
     "test:agent": "node scripts/verify-agent.mjs",
     "mcp": "node scripts/mcp-server.mjs",
     "mcp:hosted": "node scripts/hosted-server.mjs",

@@ -4,6 +4,7 @@ import { clipCrop, clipSpeed, cropPixels, outputSize, placement } from './types'
 import { ZOOM_TRANSITION_FPS, zoomTransitionFilter } from './zoom';
 import { colorLut, renderAnnotations } from './effects';
 import type { Source, Edits } from './types';
+import { blurFilterGraph } from './blur';
 let current: FFmpeg | null = null;
 let nativeController: AbortController | null = null;
 export function cancelExport() { nativeController?.abort(); nativeController=null; current?.terminate(); current = null; }
@@ -18,7 +19,7 @@ export function canCopyPicture(source: Source, edits: Edits): boolean {
     && edits.canvas.outputWidth === undefined && edits.canvas.outputHeight === undefined
     && edits.canvas.ratio === null && edits.canvas.inset === 0 && edits.resolution === 'original'
     && edits.filter === 'Original' && edits.brightness === 0 && edits.contrast === 0
-    && edits.annotations.length === 0;
+    && edits.annotations.length === 0 && !edits.blurs?.length;
 }
 
 async function loadEngine(source: Source, deterministic: boolean): Promise<{ ffmpeg: FFmpeg; threads: number }> {
@@ -150,12 +151,14 @@ export async function exportVideo(source: Source, edits: Edits, progress: (fract
     const lut=colorLut(edits);if(lut){await ffmpeg.writeFile('grade.cube',lut);filters.push('lut3d=file=grade.cube:interp=tetrahedral');}
     graph.push(`[joined]${filters.join(',')}[picture]`);
     let videoLabel='picture';
+    const blurred=blurFilterGraph(edits.blurs,output.width,output.height,duration,videoLabel);
+    graph.push(...blurred.graph);videoLabel=blurred.label;
     if(edits.annotations.length){
       await document.fonts.ready;
       progress(0,'Rendering your annotations');
       await ffmpeg.writeFile('annotations.png',await renderAnnotations(edits.annotations,output.width,output.height));
       args.push('-loop','1','-i','annotations.png');
-      graph.push('[picture][1:v]overlay=0:0:format=auto:shortest=1[annotated]');videoLabel='annotated';
+      graph.push(`[${videoLabel}][1:v]overlay=0:0:format=auto:shortest=1[annotated]`);videoLabel='annotated';
     }
     args.push('-filter_complex_threads','1','-filter_complex',graph.join(';'),'-map',`[${videoLabel}]`);
     if(hasAudio)args.push('-map','[audio]');else args.push('-an');
